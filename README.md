@@ -1,186 +1,189 @@
-# 3x-ui-setup — Qwen Code Skill
+# 3x-ui-setup — Навык для Qwen Code
 
-A **Qwen Code skill** that fully automates VPN server deployment on a fresh VPS. It handles everything from OS hardening to a working VLESS proxy with client setup instructions. Designed for beginners who want a secure, censorship-resistant connection without learning sysadmin or proxy protocols.
+**Навык Qwen Code**, который полностью автоматизирует развертывание VPN-сервера на свежем VPS. Он обрабатывает всё: от усиления безопасности ОС до работающего VLESS-прокси с инструкциями по настройке клиента. Разработан для начинающих, которые хотят безопасное, устойчивое к цензуре соединение без изучения системного администрирования или протоколов прокси.
 
 ---
 
-## 🚀 Quick Start
+## 🚀 Быстрый старт
 
-### Installation
+### Установка
 
 ```bash
-# One-line install
+# Установка в одну строку
 curl -fsSL https://raw.githubusercontent.com/GilGameshx1/3x-ui-skill/main/install.sh | bash
 ```
 
-**Or manual install:**
+**Или ручная установка:**
 ```bash
 git clone https://github.com/GilGameshx1/3x-ui-skill.git
 cp -r 3x-ui-skill/skill ~/.qwen/skills/3x-ui-setup
 rm -rf 3x-ui-skill
 ```
 
-### Usage
+### Использование
 
-After installation, open **Qwen Code** and use natural language commands:
-- *"Set up a VPN on my VPS"*
-- *"I have a new server, help me configure VLESS"*
-- *"Harden my server and install 3x-ui"*
+После установки откройте **Qwen Code** и используйте команды на естественном языке:
+- *"Настрой VPN на моём VPS"*
+- *"У меня новый сервер, помоги настроить VLESS"*
+- *"Усиль безопасность сервера и установи 3x-ui"*
 
-The skill activates automatically when Qwen detects a relevant request.
-
----
-
-## 📋 Requirements
-
-| Requirement | Details |
-|-------------|---------|
-| **Qwen Code (CLI)** | Required to invoke the skill |
-| **Fresh VPS** | Ubuntu/Debian with root access |
-| **SSH access** | From your local machine to the server |
-| **Domain name** | Optional — only needed for VLESS TLS (not required for Reality) |
-
-**Underlying Projects:**
-- **[3x-ui](https://github.com/mhsanaei/3x-ui)** — Xray panel with multi-protocol support
-- **[Xray-core](https://github.com/XTLS/Xray-core)** — Proxy engine for VLESS, Reality
-- **[Hiddify](https://github.com/hiddify/hiddify-app)** — Cross-platform proxy client
+Навык активируется автоматически, когда Qwen обнаружит соответствующий запрос.
 
 ---
 
-## 📁 File Structure
+## 📋 Требования
+
+| Требование | Детали |
+|------------|--------|
+| **Qwen Code (CLI)** | Требуется для вызова навыка |
+| **Свежий VPS** | Ubuntu/Debian с root-доступом |
+| **SSH-доступ** | С вашего локального компьютера на сервер |
+| **Доменное имя** | Опционально — только для VLESS TLS (не требуется для Reality) |
+
+**Используемые проекты:**
+- **[3x-ui](https://github.com/mhsanaei/3x-ui)** — Панель Xray с поддержкой нескольких протоколов
+- **[Xray-core](https://github.com/XTLS/Xray-core)** — Движок прокси для VLESS, Reality
+- **[Hiddify](https://github.com/hiddify/hiddify-app)** — Кроссплатформенный прокси-клиент
+
+---
+
+## 📁 Структура файлов
 
 ```
 3x-ui-skill/
-├── skill/                          # Main skill directory
-│   ├── SKILL.md                    # Core skill definition & automation logic
+├── skill/                          # Основная директория навыка
+│   ├── SKILL.md                    # Основное определение навыка и логика автоматизации
 │   └── references/
-│       ├── vless-tls.md            # VLESS TLS setup path (domain required)
-│       └── fallback-nginx.md       # Nginx fallback page configuration
-├── install.sh                      # One-line installer script
-├── README.md                       # English documentation
-├── README.ru.md                    # Russian documentation
-├── LICENSE                         # MIT license
+│       ├── vless-tls.md            # Путь настройки VLESS TLS (требуется домен)
+│       └── fallback-nginx.md       # Конфигурация страницы заглушки Nginx
+├── install.sh                      # Скрипт установки в одну строку
+├── QWEN.md                         # Конфигурация активации для Qwen Code
+├── rollback.sh                     # Скрипт отката изменений
+├── backup-db.sh                    # Резервное копирование базы данных
+├── restore-db.sh                   # Восстановление базы данных
+├── README.md                       # Документация (RU)
+├── LICENSE                         # Лицензия MIT
 └── .gitignore
 ```
 
 ---
 
-## 🔧 Workflow Overview
+## 🔧 Обзор рабочего процесса
 
 ```
-Fresh VPS (IP + root + password)
+Свежий VPS (IP + root + пароль)
   │
-  ├── Part 1: Server Hardening
-  │   ├── SSH key generation
-  │   ├── System update
-  │   ├── Non-root user + sudo
-  │   ├── SSH lockdown (no root, no passwords)
-  │   ├── UFW firewall
+  ├── Часть 1: Усиление безопасности сервера
+  │   ├── Генерация SSH-ключа
+  │   ├── Обновление системы
+  │   ├── Нерутовый пользователь + sudo
+  │   ├── Блокировка SSH (нет root, нет паролей)
+  │   ├── Брандмауэр UFW
   │   ├── fail2ban
-  │   ├── Kernel hardening
-  │   └── SSH config shortcut
+  │   ├── Усиление ядра
+  │   └── Ярлык конфигурации SSH
   │
-  ├── Part 2: VPN Installation
-  │   ├── 3x-ui panel install
-  │   ├── BBR (TCP optimization)
-  │   ├── ICMP disabled (stealth mode)
-  │   ├── Protocol setup (Reality or TLS)
-  │   ├── Connection link generation
-  │   └── Hiddify client setup
+  ├── Часть 2: Установка VPN
+  │   ├── Установка панели 3x-ui
+  │   ├── BBR (оптимизация TCP)
+  │   ├── ICMP отключён (режим невидимости)
+  │   ├── Настройка протокола (Reality или TLS)
+  │   ├── Генерация ссылки для подключения
+  │   └── Настройка клиента Hiddify
   │
-  └── Done: Secured server + Working VPN
+  └── Готово: Защищённый сервер + Работающий VPN
 ```
 
 ---
 
-## 🌐 Supported Protocols
+## 🌐 Поддерживаемые протоколы
 
-| Feature | VLESS Reality | VLESS TLS |
+| Функция | VLESS Reality | VLESS TLS |
 |---------|---------------|-----------|
-| Domain required | No | Yes |
-| SSL certificate | Not needed | Auto (acme.sh) |
-| Difficulty | Easy | Medium |
-| Recommended for | Beginners | Advanced users |
-| Stealth | High | Medium |
+| Требуется домен | Нет | Да |
+| SSL-сертификат | Не нужен | Авто (acme.sh) |
+| Сложность | Лёгко | Средне |
+| Рекомендуется для | Новичков | Продвинутых |
+| Скрытность | Высокая | Средняя |
 
 ---
 
-## 📖 Detailed Documentation
+## 📖 Подробная документация
 
-### Part 1: Server Hardening
+### Часть 1: Усиление безопасности сервера
 
-The skill will guide you through:
-1. **SSH Key Setup** — Secure key-based authentication
-2. **System Update** — Latest security patches
-3. **User Creation** — Non-root sudo user
-4. **Firewall Configuration** — UFW with minimal open ports
-5. **Kernel Hardening** — Sysctl security tweaks
-6. **Fail2Ban** — Intrusion prevention
-7. **SSH Config** — Easy connection shortcuts
+Навык проведёт вас через:
+1. **Настройка SSH-ключей** — Безопасная аутентификация на основе ключей
+2. **Обновление системы** — Последние патчи безопасности
+3. **Создание пользователя** — Нерутовый пользователь с sudo
+4. **Настройка брандмауэра** — UFW с минимальным количеством открытых портов
+5. **Усиление ядра** — Настройки безопасности sysctl
+6. **Fail2Ban** — Предотвращение вторжений
+7. **Конфигурация SSH** — Ярлыки для лёгкого подключения
 
-### Part 2: VPN Installation
+### Часть 2: Установка VPN
 
-1. **3x-ui Panel** — Modern web interface for Xray
-2. **BBR Optimization** — TCP congestion control for better speeds
-3. **ICMP Stealth** — Server doesn't respond to pings
-4. **Protocol Selection**:
-   - **Reality** (recommended) — No domain needed, highest stealth
-   - **TLS** — Requires domain, traditional SSL setup
-5. **Client Setup** — Hiddify app configuration
-6. **Connection Guide** — Generated markdown file with all credentials
-
----
-
-## 🔒 Security Features
-
-- ✅ SSH key-only authentication (no passwords)
-- ✅ Root login disabled
-- ✅ Firewall with minimal open ports
-- ✅ Fail2Ban intrusion prevention
-- ✅ Kernel security hardening
-- ✅ Panel accessible only via SSH tunnel
-- ✅ VLESS Reality for maximum stealth
+1. **Панель 3x-ui** — Современный веб-интерфейс для Xray
+2. **Оптимизация BBR** — Контроль перегрузки TCP для лучшей скорости
+3. **Скрытность ICMP** — Сервер не отвечает на пинги
+4. **Выбор протокола**:
+   - **Reality** (рекомендуется) — Домен не нужен, максимальная скрытность
+   - **TLS** — Требуется домен, традиционная настройка SSL
+5. **Настройка клиента** — Конфигурация приложения Hiddify
+6. **Руководство по подключению** — Сгенерированный markdown-файл со всеми учётными данными
 
 ---
 
-## 🛠️ Troubleshooting
+## 🔒 Функции безопасности
 
-### Common Issues
+- ✅ Аутентификация только по SSH-ключам (без паролей)
+- ✅ Вход root отключён
+- ✅ Брандмауэр с минимальным количеством открытых портов
+- ✅ Предотвращение вторжений Fail2Ban
+- ✅ Усиление безопасности ядра
+- ✅ Панель доступна только через SSH-туннель
+- ✅ VLESS Reality для максимальной скрытности
 
-| Problem | Solution |
-|---------|----------|
-| Connection drops after password change | Normal — reconnect with new credentials |
-| Permission denied (publickey) | Check key path/permissions (700/600) |
+---
+
+## 🛠️ Устранение неполадок
+
+### Распространённые проблемы
+
+| Проблема | Решение |
+|----------|---------|
+| Соединение обрывается после смены пароля | Нормально — переподключитесь с новыми учётными данными |
+| Permission denied (publickey) | Проверьте путь/разрешения ключа (700/600) |
 | Host key verification failed | `ssh-keygen -R {SERVER_IP}` |
-| x-ui install fails | `sudo apt install -y curl tar` |
-| Panel not accessible | Use SSH tunnel: `ssh -L 8080:127.0.0.1:{port} user@server` |
-| Reality not connecting | Wrong SNI — re-run scanner |
-| Hiddify shows error | Update Hiddify, re-add link |
-| Forgot panel password | `sudo x-ui setting -reset` |
+| Установка x-ui не удаётся | `sudo apt install -y curl tar` |
+| Панель недоступна | Используйте SSH-туннель: `ssh -L 8080:127.0.0.1:{port} user@server` |
+| Reality не подключается | Неправильный SNI — перезапустите сканер |
+| Hiddify показывает ошибку | Обновите Hiddify, повторно добавьте ссылку |
+| Забыли пароль панели | `sudo x-ui setting -reset` |
 
-### Getting Help
+### Получение помощи
 
-1. Check the generated guide file (`~/vpn-{nickname}-guide.md`)
-2. Ask Qwen Code: *"Help me troubleshoot my VPN connection"*
-3. Review 3x-ui logs: `sudo x-ui log`
-
----
-
-## 📝 License
-
-MIT License — feel free to modify and distribute.
+1. Проверьте сгенерированный файл руководства (`~/vpn-{nickname}-guide.md`)
+2. Спросите Qwen Code: *"Помоги устранить неполадки подключения VPN"*
+3. Просмотрите логи 3x-ui: `sudo x-ui log`
 
 ---
 
-## 🙏 Credits
+## 📝 Лицензия
 
-This skill is adapted from the original [3x-ui-skill by AndyShaman](https://github.com/AndyShaman/3x-ui-skill) for Claude Code, modified for Qwen Code.
+Лицензия MIT — не стесняйтесь изменять и распространять.
 
 ---
 
-## 📚 Additional Resources
+## 🙏 Благодарности
+
+Этот навык адаптирован из оригинального [3x-ui-skill от AndyShaman](https://github.com/AndyShaman/3x-ui-skill) для Claude Code, модифицирован для Qwen Code.
+
+---
+
+## 📚 Дополнительные ресурсы
 
 - [3x-ui GitHub](https://github.com/mhsanaei/3x-ui)
-- [Xray-core Documentation](https://github.com/XTLS/Xray-core)
-- [Hiddify Client](https://github.com/hiddify/hiddify-app)
+- [Документация Xray-core](https://github.com/XTLS/Xray-core)
+- [Клиент Hiddify](https://github.com/hiddify/hiddify-app)
 - [RealiTLScanner](https://github.com/XTLS/RealiTLScanner)
