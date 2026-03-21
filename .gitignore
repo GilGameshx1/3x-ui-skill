@@ -1,0 +1,30 @@
+# System files
+.DS_Store
+Thumbs.db
+
+# Editor files
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.bak
+
+# Guide files (contain sensitive info)
+*guide*.md
+vpn-*.md
+
+# Backup files
+*.backup
+*.backup.*
+x-ui.db.backup*
+
+# SSH keys (never commit!)
+*_key
+*_key.pub
