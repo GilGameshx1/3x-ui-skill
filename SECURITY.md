@@ -34,11 +34,10 @@
 
 Вместо этого:
 
-1. **Отправьте email** на gilgameshx1@gmail.com
-2. **Укажите в теме**: `[SECURITY] 3x-ui-skill vulnerability`
-3. **Опишите уязвимость** подробно
-4. **Приложите шаги** для воспроизведения (если безопасно)
-5. **Предложите исправление** (если возможно)
+1. **Создайте Private Security Advisory** в репозитории GitHub
+2. **Опишите уязвимость** подробно
+3. **Приложите шаги** для воспроизведения (если безопасно)
+4. **Предложите исправление** (если возможно)
 
 ### Что мы обещаем
 
@@ -203,8 +202,8 @@ bash ~/.qwen/skills/3x-ui-setup/install.sh update
 
 ### По вопросам безопасности
 
-- **Email:** gilgameshx1@gmail.com
-- **GitHub:** https://github.com/GilGameshx1/3x-ui-skill/issues (для НЕ security вопросов)
+- **GitHub Security:** https://github.com/GilGameshx1/3x-ui-skill/security
+- **GitHub Issues:** https://github.com/GilGameshx1/3x-ui-skill/issues (для НЕ security вопросов)
 
 ### Экстренная помощь
 
