@@ -601,12 +601,46 @@ echo ""
 
 ### Step 20: Install Hiddify Client
 
-Guide user to install Hiddify on their device:
+Guide user to install one of the following clients on their device:
 
-1. **Android/iOS:** Download from [Hiddify GitHub](https://github.com/hiddify/hiddify-app/releases)
-2. **Desktop:** Download from [Hiddify GitHub](https://github.com/hiddify/hiddify-app/releases)
-3. Import the VLESS link from Step 19
-4. Connect and verify
+#### 📱 Android
+
+| Клиент | Описание | Ссылка |
+|--------|----------|--------|
+| **Hiddify** | Универсальный, простой | [GitHub](https://github.com/hiddify/hiddify-app/releases) |
+| **NekoBox** | Продвинутый, много функций | [GitHub](https://github.com/MatsuriDayo/NekoBoxForAndroid/releases) |
+| **v2rayNG** | Классический | [GitHub](https://github.com/2dust/v2rayNG/releases) |
+| **Husi** | Лёгкий | [GitHub](https://github.com/husi-network/husi-android/releases) |
+
+#### 🍎 iOS
+
+| Клиент | Описание | Ссылка |
+|--------|----------|--------|
+| **Hiddify** | Универсальный | [GitHub](https://github.com/hiddify/hiddify-app/releases) |
+| **Streisand** | Простой | [App Store](https://apps.apple.com/app/streisand/id6450534064) |
+| **V2Box** | Бесплатный | [App Store](https://apps.apple.com/app/v2box-v2ray-client/id1552141085) |
+| **Shadowrocket** | Платный ($2.99) | [App Store](https://apps.apple.com/app/shadowrocket/id932747118) |
+
+#### 🖥️ Desktop (Windows/macOS/Linux)
+
+| Клиент | Описание | Ссылка |
+|--------|----------|--------|
+| **Hiddify** | Универсальный | [GitHub](https://github.com/hiddify/hiddify-app/releases) |
+| **NekoRay** | Для Windows/Linux | [GitHub](https://github.com/MatsuriDayo/nekoray/releases) |
+| **v2rayN** | Для Windows | [GitHub](https://github.com/2dust/v2rayN/releases) |
+| **FoXray** | Для macOS | [App Store](https://apps.apple.com/app/foxray/id6448104677) |
+
+#### 🔧 Установка и настройка
+
+1. **Скачайте** подходящий клиент из таблицы выше
+2. **Установите** приложение на устройство
+3. **Импортируйте** VLESS ссылку из Step 19:
+   - Нажмите "+" или "Add Profile"
+   - Вставьте ссылку
+   - Сохраните
+4. **Подключитесь** к серверу
+
+**Рекомендация:** Для начинающих используйте **Hiddify** — самый простой и универсальный.
 
 ---
 
@@ -691,12 +725,39 @@ Then open: \`https://127.0.0.1:${PANEL_PORT}/${WEB_BASE_PATH}\`
 ${VLESS_LINK}
 \`\`\`
 
-### Quick Import
-1. Install Hiddify: https://github.com/hiddify/hiddify-app/releases
-2. Open Hiddify
-3. Tap "+" or "Add Profile"
-4. Paste the link above
-5. Connect!
+### 📱 Quick Import — Android
+
+| Клиент | Ссылка |
+|--------|--------|
+| **Hiddify** | [GitHub](https://github.com/hiddify/hiddify-app/releases) |
+| **NekoBox** | [GitHub](https://github.com/MatsuriDayo/NekoBoxForAndroid/releases) |
+| **v2rayNG** | [GitHub](https://github.com/2dust/v2rayNG/releases) |
+
+### 🍎 Quick Import — iOS
+
+| Клиент | Ссылка |
+|--------|--------|
+| **Hiddify** | [GitHub](https://github.com/hiddify/hiddify-app/releases) |
+| **Streisand** | [App Store](https://apps.apple.com/app/streisand/id6450534064) |
+| **V2Box** | [App Store](https://apps.apple.com/app/v2box-v2ray-client/id1552141085) |
+
+### 🖥️ Quick Import — Desktop
+
+| Клиент | Платформа | Ссылка |
+|--------|-----------|--------|
+| **Hiddify** | Windows/macOS/Linux | [GitHub](https://github.com/hiddify/hiddify-app/releases) |
+| **NekoRay** | Windows/Linux | [GitHub](https://github.com/MatsuriDayo/nekoray/releases) |
+| **v2rayN** | Windows | [GitHub](https://github.com/2dust/v2rayN/releases) |
+
+### 🔧 How to Import
+
+1. **Download** and install your preferred client
+2. **Open** the application
+3. **Tap** "+" or "Add Profile" or "Import from Clipboard"
+4. **Paste** the VLESS link above
+5. **Save** and **Connect**!
+
+**Recommendation:** Use **Hiddify** for beginners — simplest and most universal.
 
 ---
 

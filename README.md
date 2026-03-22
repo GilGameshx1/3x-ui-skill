@@ -132,6 +132,23 @@ rm -rf 3x-ui-skill
 5. **Настройка клиента** — Конфигурация приложения Hiddify
 6. **Руководство по подключению** — Сгенерированный markdown-файл со всеми учётными данными
 
+### 📱 Поддерживаемые клиенты
+
+#### Android
+- **Hiddify** — [GitHub](https://github.com/hiddify/hiddify-app/releases)
+- **NekoBox** — [GitHub](https://github.com/MatsuriDayo/NekoBoxForAndroid/releases)
+- **v2rayNG** — [GitHub](https://github.com/2dust/v2rayNG/releases)
+
+#### iOS
+- **Hiddify** — [GitHub](https://github.com/hiddify/hiddify-app/releases)
+- **Streisand** — [App Store](https://apps.apple.com/app/streisand/id6450534064)
+- **V2Box** — [App Store](https://apps.apple.com/app/v2box-v2ray-client/id1552141085)
+
+#### Desktop
+- **Hiddify** (Windows/macOS/Linux) — [GitHub](https://github.com/hiddify/hiddify-app/releases)
+- **NekoRay** (Windows/Linux) — [GitHub](https://github.com/MatsuriDayo/nekoray/releases)
+- **v2rayN** (Windows) — [GitHub](https://github.com/2dust/v2rayN/releases)
+
 ---
 
 ## 🔒 Функции безопасности
