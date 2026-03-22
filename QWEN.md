@@ -1,214 +1,225 @@
-# Qwen Code Skill Activation Configuration
+# Конфигурация активации навыка для Qwen Code
 
-## Skill Metadata
+## Метаданные навыка
 
-**Name:** 3x-ui-setup  
-**Version:** 2.0.0  
-**Author:** GilGameshx1 (adapted from AndyShaman)  
-**Description:** Complete VPN server setup from scratch with server hardening and 3x-ui panel installation
-
----
-
-## Activation Triggers
-
-The skill should activate when the user mentions any of the following:
-
-### Primary Triggers
-- "vpn", "vps", "vless", "xray", "3x-ui", "proxy server"
-- "set up server", "harden server", "install vpn"
-- "configure proxy", "setup v2ray", "deploy vpn"
-
-### Secondary Triggers
-- "fresh vps", "new server", "ubuntu server"
-- "ssh key", "server security", "firewall setup"
-- "censorship", "bypass firewall", "encrypted connection"
-
-### Contextual Triggers
-- User mentions having a VPS with root access
-- User asks about VPN protocols (VLESS, Reality, TLS)
-- User needs help with proxy configuration
+**Название:** 3x-ui-setup  
+**Версия:** 2.0.0  
+**Автор:** GilGameshx1 (адаптировано из AndyShaman)  
+**Описание:** Полная автоматизация настройки VPN-сервера с усилением безопасности и установкой панели 3x-ui
 
 ---
 
-## Execution Mode
+## Триггеры активации
 
-**Mode:** `interactive-sequential`
+Навык должен активироваться, когда пользователь упоминает любое из следующего:
 
-The skill executes in a step-by-step manner, requiring user confirmation at critical points.
+### Основные триггеры
+- "vpn", "vps", "vless", "xray", "3x-ui", "proxy server", "прокси сервер"
+- "настроить сервер", "усилить сервер", "установить vpn"
+- "настроить прокси", "setup v2ray", "развернуть vpn"
 
----
+### Вторичные триггеры
+- "свежий vps", "новый сервер", "ubuntu сервер"
+- "ssh ключ", "безопасность сервера", "настройка брандмауэра"
+- "цензура", "обход блокировок", "шифрованное соединение"
 
-## Required Confirmations
-
-The skill MUST ask for user confirmation before:
-
-1. **Destructive Actions**
-   - Locking down SSH (disabling root/password login)
-   - Firewall configuration changes
-   - Kernel parameter modifications
-
-2. **Installation Steps**
-   - 3x-ui panel installation
-   - Protocol selection (Reality vs TLS)
-
-3. **Final Steps**
-   - Guide file generation
-   - fail2ban installation
+### Контекстные триггеры
+- Пользователь упоминает наличие VPS с root-доступом
+- Пользователь спрашивает о VPN протоколах (VLESS, Reality, TLS)
+- Пользователю нужна помощь с настройкой прокси
 
 ---
 
-## User Input Requirements
+## Режим выполнения
 
-The skill must collect the following information before starting:
+**Режим:** `interactive-sequential`
 
-### Required (Remote Mode)
-1. Server IP address
-2. Root password (for initial connection)
-3. Desired username (for non-root user)
-4. Server nickname (for SSH config)
-
-### Required (Local Mode)
-1. Desired username
-2. Server nickname
-
-### Optional
-1. Domain name (only if user wants VLESS TLS)
-2. Custom panel port (default: auto-generated)
+Навык выполняется пошагово, требуя подтверждения пользователя в критических точках.
 
 ---
 
-## Input Validation Rules
+## Обязательные подтверждения
 
-### IP Address
-- Must be valid IPv4 format
-- Must be reachable via ping (optional check)
+Навык ДОЛЖЕН запрашивать подтверждение пользователя перед:
 
-### Username
-- 3-16 characters
-- Must start with lowercase letter
-- Only lowercase letters and numbers allowed
+1. **Деструктивными действиями**
+   - Блокировка SSH (отключение root/парольного входа)
+   - Изменения конфигурации брандмауэра
+   - Изменения параметров ядра
 
-### Password (if generated)
-- Minimum 16 characters
-- Must include uppercase, lowercase, numbers, special characters
+2. **Шагами установки**
+   - Установка панели 3x-ui
+   - Выбор протокола (Reality против TLS)
 
-### Domain (if provided)
-- Must be valid domain format
-- DNS must resolve to server IP (for TLS mode)
+3. **Финальными шагами**
+   - Генерация файла-гайда
+   - Установка fail2ban
 
 ---
 
-## Tool Permissions
+## Требования к входным данным
 
-**Allowed Tools:**
-- `Bash` - Execute shell commands on server
-- `Read` - Read files from server
-- `Write` - Write files to server and local
-- `Edit` - Edit configuration files
+Навык должен собрать следующую информацию перед запуском:
 
-**Restricted Actions:**
-- Never expose passwords in logs
-- Never store sensitive data in plain text (except guide file)
-- Never execute unverified scripts from unknown sources
+### Обязательно (удалённый режим)
+1. IP-адрес сервера
+2. Root-пароль (для начального подключения)
+3. Желаемое имя пользователя (для нерутового пользователя)
+4. Псевдоним сервера (для SSH config)
 
----
+### Обязательно (локальный режим)
+1. Желаемое имя пользователя
+2. Псевдоним сервера
 
-## Error Handling
-
-### Connection Lost
-If SSH connection drops:
-1. Inform user
-2. Attempt reconnection
-3. If reconnection fails, provide manual recovery steps
-
-### Step Failure
-If any step fails:
-1. Display error message with possible causes
-2. Offer rollback option
-3. Provide manual fix instructions
-
-### Rollback Available
-The skill supports rollback for:
-- User creation
-- SSH key installation
-- Firewall changes
-- Package installations
+### Опционально
+1. Доменное имя (только если пользователь хочет VLESS TLS)
+2. Пользовательский порт панели (по умолчанию: автогенерация)
 
 ---
 
-## Output Format
+## Правила валидации входных данных
 
-### Progress Indicators
-Use the following format for status updates:
+### IP-адрес
+- Должен быть валидным IPv4 форматом
+- Должен быть достижим через ping (опциональная проверка)
+
+### Имя пользователя
+- 3-16 символов
+- Должно начинаться со строчной буквы
+- Только строчные буквы и цифры
+
+### Пароль (если генерируется)
+- Минимум 16 символов
+- Должен включать заглавные, строчные, цифры, спецсимволы
+
+### Домен (если предоставлен)
+- Должен быть валидным форматом домена
+- DNS должен резолвиться на IP сервера (для режима TLS)
+
+---
+
+## Разрешения инструментов
+
+**Разрешённые инструменты:**
+- `Bash` — Выполнение shell-команд на сервере
+- `Read` — Чтение файлов с сервера
+- `Write` — Запись файлов на сервер и локально
+- `Edit` — Редактирование конфигурационных файлов
+
+**Ограниченные действия:**
+- Никогда не раскрывать пароли в логах
+- Никогда не хранить чувствительные данные в открытом виде (кроме файла-гайда)
+- Никогда не выполнять непроверенные скрипты из неизвестных источников
+
+---
+
+## Обработка ошибок
+
+### Потеря соединения
+Если SSH соединение обрывается:
+1. Сообщить пользователю
+2. Попытаться переподключиться
+3. Если переподключение не удалось — предоставить инструкции по ручному восстановлению
+
+### Ошибка шага
+Если любой шаг не удался:
+1. Отобразить сообщение об ошибке с возможными причинами
+2. Предложить опцию отката
+3. Предоставить инструкции по ручному исправлению
+
+### Откат доступен
+Навык поддерживает откат для:
+- Создание пользователя
+- Установка SSH-ключа
+- Изменения брандмауэра
+- Установка пакетов
+
+---
+
+## Формат вывода
+
+### Индикаторы прогресса
+Использовать следующий формат для обновлений статуса:
 
 ```
-[1/22] ✓ SSH key generated
-[2/22] ⏳ Connecting to server...
-[3/22] ✗ Connection failed - retrying...
+[1/22] ✓ SSH ключ сгенерирован
+[2/22] ⏳ Подключение к серверу...
+[3/22] ✗ Ошибка подключения — повторная попытка...
 ```
 
-### Status Symbols
-- `✓` - Success
-- `✗` - Error/Failure
-- `⏳` - In Progress
-- `!` - Warning
-- `→` - Next step
+### Символы статуса
+- `✓` — Успех
+- `✗` — Ошибка/Неудача
+- `⏳` — В процессе
+- `!` — Предупреждение
+- `→` — Следующий шаг
 
-### Color Coding (if supported)
-- Green - Success
-- Red - Error
-- Yellow - Warning
-- Blue - Info
-
----
-
-## Language Support
-
-**Primary:** English  
-**Secondary:** Russian (README.ru.md)
-
-The skill should detect user language and respond accordingly.
+### Цветовая кодировка (если поддерживается)
+- Зелёный — Успех
+- Красный — Ошибка
+- Жёлтый — Предупреждение
+- Синий — Информация
 
 ---
 
-## File Paths
+## Языковая поддержка
 
-### Local Files
-- SSH keys: `~/.ssh/{nickname}_key`
+**Основной:** Русский  
+**Вторичный:** Английский
+
+Навык должен определять язык пользователя и отвечать соответственно.
+
+---
+
+## Пути к файлам
+
+### Локальные файлы
+- SSH ключи: `~/.ssh/{nickname}_key`
 - SSH config: `~/.ssh/config`
-- Guide file: `~/vpn-{nickname}-guide.md`
+- Файл-гайд: `~/vpn-{nickname}-guide.md`
 
-### Remote Files
+### Удалённые файлы
 - Authorized keys: `/home/{username}/.ssh/authorized_keys`
-- 3x-ui database: `/etc/x-ui/x-ui.db`
-- 3x-ui config: `/etc/x-ui/`
-- Xray binary: `/usr/local/x-ui/bin/`
+- База данных 3x-ui: `/etc/x-ui/x-ui.db`
+- Конфигурация 3x-ui: `/etc/x-ui/`
+- Бинарник Xray: `/usr/local/x-ui/bin/`
 
 ---
 
-## Security Rules
+## Правила безопасности
 
-1. **NEVER** log or display passwords in plain text
-2. **NEVER** commit guide files to version control
-3. **ALWAYS** verify SSH key before locking down access
-4. **ALWAYS** use HTTPS/SSH tunnels for panel access
-5. **ALWAYS** generate strong random passwords
-
----
-
-## Post-Installation
-
-After successful installation, the skill should:
-
-1. Generate comprehensive guide file
-2. Verify all services are running
-3. Test VPN connection (if possible)
-4. Provide troubleshooting tips
-5. Offer to set up automatic backups
+1. **НИКОГДА** не логировать и не отображать пароли в открытом виде
+2. **НИКОГДА** не коммитить файлы-гайды в систему контроля версий
+3. **ВСЕГДА** проверять SSH ключ перед блокировкой доступа
+4. **ВСЕГДА** использовать SSH-туннель для доступа к панели
+5. **ВСЕГДА** генерировать надёжные случайные пароли
 
 ---
 
-## Support & Updates
+## После установки
 
-**Repository:** https://github.com/GilGameshx1/3x-ui-skill  
-**Issues:** https://github.com/GilGameshx1/3x-ui-skill/issues
+После успешной установки навык должен:
+
+1. Сгенерировать подробный файл-гайд
+2. Проверить, что все службы работают
+3. Протестировать VPN подключение (если возможно)
+4. Предоставить советы по устранению неполадок
+5. Предложить настроить автоматические резервные копии
+
+---
+
+## Поддержка и обновления
+
+**Репозиторий:** https://github.com/GilGameshx1/3x-ui-skill  
+**Проблемы:** https://github.com/GilGameshx1/3x-ui-skill/issues
+
+---
+
+## Версионирование
+
+Навык использует семантическое версионирование (SemVer):
+- **MAJOR** — ломающие изменения
+- **MINOR** — новые функции (обратно совместимые)
+- **PATCH** — исправления ошибок
+
+Текущая версия: **2.0.0**

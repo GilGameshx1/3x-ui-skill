@@ -1,19 +1,18 @@
-# Fallback Nginx Page Configuration
+# Конфигурация страницы заглушки Nginx
 
-This reference file configures a camouflage/fallback page for VLESS TLS setups.
-When someone visits your domain directly, they see a normal website instead of an error.
-
----
-
-## When to Use
-
-- You're using VLESS TLS (not Reality)
-- You want to hide the fact that you're running a proxy
-- You need a fallback for non-proxy connections on port 443
+Этот справочный файл настраивает страницу-заглушку (камуфляж) для настроек VLESS TLS. Когда кто-то посещает ваш домен напрямую, он видит обычный веб-сайт вместо ошибки.
 
 ---
 
-## Step 1: Install Nginx
+## Когда использовать
+
+- Вы используете VLESS TLS (не Reality)
+- Вы хотите скрыть факт запуска прокси
+- Вам нужна заглушка для обычных подключений на порту 443
+
+---
+
+## Шаг 1: Установка Nginx
 
 ```bash
 ssh {nickname} "sudo apt install -y nginx"
@@ -21,16 +20,16 @@ ssh {nickname} "sudo apt install -y nginx"
 
 ---
 
-## Step 2: Create Fallback HTML Page
+## Шаг 2: Создание HTML-страницы заглушки
 
 ```bash
 sudo tee /var/www/html/index.html << 'EOF'
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Welcome</title>
+    <title>Добро пожаловать</title>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
@@ -52,8 +51,8 @@ sudo tee /var/www/html/index.html << 'EOF'
 </head>
 <body>
     <div class="container">
-        <h1>Welcome</h1>
-        <p>This is a personal website.</p>
+        <h1>Добро пожаловать</h1>
+        <p>Это личный веб-сайт.</p>
     </div>
 </body>
 </html>
@@ -62,9 +61,9 @@ EOF
 
 ---
 
-## Step 3: Configure Nginx as Fallback
+## Шаг 3: Настройка Nginx как заглушки
 
-Create Nginx config that serves the static page on port 80 and forwards port 443 to Xray:
+Создайте конфигурацию Nginx, которая обслуживает статическую страницу на порту 80 и перенаправляет порт 443 в Xray:
 
 ```bash
 sudo tee /etc/nginx/sites-available/default << 'EOF'
@@ -93,7 +92,7 @@ server {
     ssl_prefer_server_ciphers on;
 
     location / {
-        # Fallback page if Xray doesn't handle the connection
+        # Страница заглушки, если Xray не обрабатывает соединение
         root /var/www/html;
         index index.html;
         try_files $uri $uri/ =404;
@@ -104,7 +103,7 @@ EOF
 
 ---
 
-## Step 4: Enable and Restart Nginx
+## Шаг 4: Включение и перезапуск Nginx
 
 ```bash
 sudo systemctl enable nginx
@@ -114,34 +113,95 @@ sudo systemctl status nginx
 
 ---
 
-## Step 5: Verify Fallback Works
+## Шаг 5: Проверка работы заглушки
 
-Test from your local machine:
+Проверьте с локального компьютера:
 ```bash
 curl -k https://{domain}
 ```
 
-Should return the HTML fallback page.
+Должна вернуться HTML-страница заглушки.
 
 ---
 
-## Integration with 3x-ui
+## Интеграция с 3x-ui
 
-The 3x-ui panel with VLESS TLS will handle the actual proxy connections on port 443.
-Nginx serves as a fallback for regular HTTP/HTTPS traffic that doesn't match the VLESS protocol.
+Панель 3x-ui с VLESS TLS будет обрабатывать фактические прокси-подключения на порту 443.
+Nginx служит заглушкой для обычного HTTP/HTTPS трафика, который не соответствует протоколу VLESS.
 
-This setup provides:
-- **Plausible deniability** — looks like a normal website
-- **Fallback page** — visitors see content instead of errors
-- **SSL termination** — Nginx handles SSL, Xray handles proxy
+Эта настройка обеспечивает:
+- **Правдоподобное отрицание** — выглядит как обычный веб-сайт
+- **Страница заглушки** — посетители видят контент вместо ошибок
+- **SSL терминация** — Nginx обрабатывает SSL, Xray обрабатывает прокси
 
 ---
 
-## Troubleshooting
+## Устранение неполадок
 
-| Problem | Solution |
-|---------|----------|
-| Nginx won't start | Check `sudo nginx -t` for config errors |
-| Port 443 already in use | `sudo ss -tlnp | grep 443` to find conflict |
-| Certificate not found | Re-run certificate setup from vless-tls.md |
-| Fallback shows error | Check Nginx logs: `sudo tail -f /var/log/nginx/error.log` |
+| Проблема | Решение |
+|----------|---------|
+| Nginx не запускается | Проверьте `sudo nginx -t` на ошибки конфигурации |
+| Порт 443 уже используется | `sudo ss -tlnp | grep 443` для поиска конфликта |
+| Сертификат не найден | Повторно запустите настройку сертификата из vless-tls.md |
+| Заглушка показывает ошибку | Проверьте логи Nginx: `sudo tail -f /var/log/nginx/error.log` |
+| Доступен только HTTP | Проверьте конфигурацию SSL в sites-available |
+
+---
+
+## Дополнительные настройки
+
+### Добавление редиректа HTTP на HTTPS
+
+```bash
+sudo tee /etc/nginx/sites-available/default << 'EOF'
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name _;
+    
+    # Редирект на HTTPS
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl default_server;
+    listen [::]:443 ssl default_server;
+    server_name _;
+
+    ssl_certificate /root/cert/{domain}/fullchain.pem;
+    ssl_certificate_key /root/cert/{domain}/privkey.pem;
+
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
+
+    location / {
+        root /var/www/html;
+        index index.html;
+        try_files $uri $uri/ =404;
+    }
+}
+EOF
+
+sudo systemctl restart nginx
+```
+
+### Включение кэширования
+
+Для улучшения производительности добавьте в блок `http`:
+
+```bash
+sudo tee -a /etc/nginx/nginx.conf << 'EOF'
+
+# Кэширование статического контента
+http {
+    # ... существующие настройки ...
+    
+    # Кэш для статики
+    location ~* \.(jpg|jpeg|png|gif|ico|css|js)$ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+}
+EOF
+```

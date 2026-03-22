@@ -1,74 +1,75 @@
-# VLESS TLS Setup (with Domain)
+# Настройка VLESS TLS (с доменом)
 
-Use this when user has a domain and wants VLESS TLS instead of Reality.
+Используйте этот файл, когда у пользователя есть домен и он хочет VLESS TLS вместо Reality.
 
-## Prerequisites
-- Domain registered and A-record pointing to server IP
-- DNS propagated (verify: `nslookup {domain}` returns server IP)
-- Ports 80 and 443 open in UFW (already done in Step 8)
+## Требования
+
+- Домен зарегистрирован и A-запись указывает на IP сервера
+- DNS распространён (проверьте: `nslookup {domain}` возвращает IP сервера)
+- Порты 80 и 443 открыты в UFW (уже сделано в Шаге 8)
 
 ---
 
-## Step 1: Verify DNS
+## Шаг 1: Проверка DNS
 
 ```bash
 nslookup {domain}
 ```
 
-Must return the server IP. If not -- wait 5-10 minutes for DNS propagation.
+Должен вернуть IP сервера. Если нет — подождите 5-10 минут для распространения DNS.
 
-Can also check from server:
+Можно также проверить с сервера:
 ```bash
 ssh {nickname} "sudo apt install -y dnsutils > /dev/null 2>&1; nslookup {domain}"
 ```
 
 ---
 
-## Step 2: Get SSL Certificate
+## Шаг 2: Получение SSL-сертификата
 
-Use x-ui built-in cert management:
+Используйте встроенное управление сертификатами x-ui:
 ```bash
 ssh {nickname} "sudo x-ui cert"
 ```
 
-This opens interactive menu. Select:
-1. "Get SSL" (option 1)
-2. Enter domain name
-3. Use port 80 (default)
+Это откроет интерактивное меню. Выберите:
+1. "Get SSL" (опция 1)
+2. Введите имя домена
+3. Используйте порт 80 (по умолчанию)
 
-**Alternatively**, non-interactive with acme.sh:
+**Альтернативно**, неинтерактивно с acme.sh:
 ```bash
 ssh {nickname} "sudo apt install -y socat && curl https://get.acme.sh | sh && sudo ~/.acme.sh/acme.sh --issue -d {domain} --standalone --httpport 80 && sudo ~/.acme.sh/acme.sh --install-cert -d {domain} --key-file /root/cert/{domain}/privkey.pem --fullchain-file /root/cert/{domain}/fullchain.pem --reloadcmd 'x-ui restart'"
 ```
 
-Certificate files will be at:
+Файлы сертификата будут расположены:
 ```
-/root/cert/{domain}/fullchain.pem  # certificate
-/root/cert/{domain}/privkey.pem    # private key
+/root/cert/{domain}/fullchain.pem  # сертификат
+/root/cert/{domain}/privkey.pem    # приватный ключ
 ```
 
 ---
 
-## Step 3: Configure Panel with SSL
+## Шаг 3: Настройка панели с SSL
 
-Apply certificate to panel:
+Примените сертификат к панели:
 ```bash
 ssh {nickname} "sudo /usr/local/x-ui/x-ui cert -webCert /root/cert/{domain}/fullchain.pem -webCertKey /root/cert/{domain}/privkey.pem"
 ssh {nickname} "sudo x-ui restart"
 ```
 
-Panel now serves HTTPS. Access via SSH tunnel:
+Теперь панель обслуживает HTTPS. Доступ через SSH-туннель:
 ```bash
 ssh -L {panel_port}:127.0.0.1:{panel_port} {nickname}
 ```
 
-Then open: `https://127.0.0.1:{panel_port}/{web_base_path}` (browser will warn about certificate mismatch -- this is expected, accept it).
+Затем откройте: `https://127.0.0.1:{panel_port}/{web_base_path}` (браузер предупредит о несоответствии сертификата — это нормально, примите его).
 
 ---
 
-## Step 4: Change Panel Credentials
+## Шаг 4: Изменение учётных данных панели
 
-Connection is encrypted (SSH tunnel + HTTPS), safe to set custom credentials:
+Соединение зашифровано (SSH-туннель + HTTPS), можно безопасно установить свои учётные данные:
 ```bash
 ssh {nickname} "sudo x-ui setting -username {new_username} -password {new_password}"
 ssh {nickname} "sudo x-ui restart"
@@ -76,30 +77,30 @@ ssh {nickname} "sudo x-ui restart"
 
 ---
 
-## Step 5: Enable 2FA in Panel (Recommended)
+## Шаг 5: Включение 2FA в панели (рекомендуется)
 
-Tell user to:
-1. Open panel via SSH tunnel: `https://127.0.0.1:{panel_port}/{web_base_path}`
-2. Go to Settings -> Account
-3. Enable "Two-Factor Authentication"
-4. Scan QR with authenticator app (Google Authenticator, Microsoft Authenticator)
-5. Enter 6-digit code to confirm
+Предложите пользователю:
+1. Открыть панель через SSH-туннель: `https://127.0.0.1:{panel_port}/{web_base_path}`
+2. Перейти в Settings -> Account
+3. Включить "Two-Factor Authentication"
+4. Отсканировать QR-код приложением-аутентификатором (Google Authenticator, Microsoft Authenticator)
+5. Ввести 6-значный код для подтверждения
 
 ---
 
-## Step 6: Create VLESS TLS Inbound
+## Шаг 6: Создание входящего подключения VLESS TLS
 
-**Login to API:**
+**Вход в API:**
 ```bash
 ssh {nickname} 'PANEL_PORT={panel_port}; curl -sk -c /tmp/3x-cookie -b /tmp/3x-cookie -X POST "https://127.0.0.1:${PANEL_PORT}/{web_base_path}/login" -H "Content-Type: application/x-www-form-urlencoded" -d "username={panel_username}&password={panel_password}"'
 ```
 
-**Generate UUID:**
+**Генерация UUID:**
 ```bash
 ssh {nickname} "sudo /usr/local/x-ui/bin/xray-linux-* uuid"
 ```
 
-**Create VLESS TLS inbound on port 443:**
+**Создание входящего подключения VLESS TLS на порту 443:**
 ```bash
 ssh {nickname} 'PANEL_PORT={panel_port}; curl -sk -c /tmp/3x-cookie -b /tmp/3x-cookie -X POST "https://127.0.0.1:${PANEL_PORT}/{web_base_path}/panel/api/inbounds/add" -H "Content-Type: application/json" -d '"'"'{
   "up": 0,
@@ -120,10 +121,10 @@ ssh {nickname} 'PANEL_PORT={panel_port}; curl -sk -c /tmp/3x-cookie -b /tmp/3x-c
 
 ---
 
-## Step 7: Get Connection Link
+## Шаг 7: Получение ссылки для подключения
 
 ```bash
-ssh {nickname} 'PANEL_PORT={panel_port}; curl -sk -b /tmp/3x-cookie "https://127.0.0.1:${PANEL_PORT}/{web_base_path}/panel/api/inbounds/list" | python3 -c "
+ssh {nickname} 'PANEL_PORT={panel_port}; curl -sk -b /tmp/3x-cookie "https://127.0.0.1:${PANEL_PORT}/${web_base_path}/panel/api/inbounds/list" | python3 -c "
 import json,sys
 data = json.load(sys.stdin)
 for inb in data.get(\"obj\", []):
@@ -133,8 +134,8 @@ for inb in data.get(\"obj\", []):
         client = settings[\"clients\"][0]
         uuid = client[\"id\"]
         port = inb[\"port\"]
-        sni = stream.get(\"tlsSettings\", {}).get(\"serverName\", \"")
-        flow = client.get("flow", "")
+        sni = stream.get(\"tlsSettings\", {}).get(\"serverName\", \"\")
+        flow = client.get(\"flow\", \"\")
         link = f\"vless://{uuid}@{sni}:{port}?type=tcp&security=tls&sni={sni}&fp=chrome&flow={flow}#vless-tls\"
         print(link)
         break
@@ -143,19 +144,31 @@ for inb in data.get(\"obj\", []):
 
 ---
 
-## Step 8: Auto-Renew Certificate via Crontab
+## Шаг 8: Автоматическое продление сертификата через Crontab
 
-Certificate renews automatically via acme.sh cron job. But ensure port 80 stays open (already done by server-setup).
+Сертификат автоматически продлевается через cron-задачу acme.sh. Убедитесь, что порт 80 остаётся открытым (уже сделано при настройке сервера).
 
-Verify auto-renewal is configured:
+Проверьте, что автопродление настроено:
 ```bash
 ssh {nickname} "sudo crontab -l 2>/dev/null | grep acme"
 ```
 
-Should show a cron entry for acme.sh renewal.
+Должна отображаться cron-задача для продления acme.sh.
 
 ---
 
-## Completion
+## Завершение
 
-After getting the link, return to main SKILL.md **Step 20** (Install Hiddify).
+После получения ссылки вернитесь к основному SKILL.md **Шаг 20** (Установка клиента Hiddify).
+
+---
+
+## Устранение неполадок
+
+| Проблема | Решение |
+|----------|---------|
+| DNS не резолвится | Подождите 10-15 минут, проверьте настройки домена |
+| Ошибка получения сертификата | Убедитесь, что порт 80 открыт и не занят |
+| Сертификат не продлевается | Проверьте cron: `sudo crontab -l` |
+| Панель недоступна | Используйте SSH-туннель |
+| Ошибка SSL в браузере | Это нормально при доступе по IP, используйте домен |
