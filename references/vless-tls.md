@@ -67,11 +67,22 @@ ssh -L {panel_port}:127.0.0.1:{panel_port} {nickname}
 
 ---
 
-## Шаг 4: Изменение учётных данных панели
+## Шаг 4: Учётные данные панели
 
-Соединение зашифровано (SSH-туннель + HTTPS), можно безопасно установить свои учётные данные:
+Пароль не передавайте аргументом в командной строке — он виден в `ps` и в истории.
+Если версия 3x-ui умеет спрашивать интерактивно — используйте это:
+
 ```bash
-ssh {nickname} "sudo x-ui setting -username {new_username} -password {new_password}"
+ssh -t {nickname} "sudo x-ui setting -username <NEW_USER>"
+ssh -t {nickname} "sudo x-ui setting -password"     # спросит пароль, в историю не попадёт
+```
+
+Если интерактивного ввода нет, пароль всё равно не печатайте в лог: читайте его
+через `read -rsp`, ставьте пробел перед командой (при `HISTCONTROL=ignorespace`
+она не попадёт в историю) и сразу после — `history -d` для последней строки.
+В чат и в файлы пароль не копируется: пользователь сохраняет его в менеджер паролей.
+
+```bash
 ssh {nickname} "sudo x-ui restart"
 ```
 
@@ -136,7 +147,7 @@ for inb in data.get(\"obj\", []):
         port = inb[\"port\"]
         sni = stream.get(\"tlsSettings\", {}).get(\"serverName\", \"\")
         flow = client.get(\"flow\", \"\")
-        link = f\"vless://{uuid}@{sni}:{port}?type=tcp&security=tls&sni={sni}&fp=chrome&flow={flow}#vless-tls\"
+        link = f\"vless://{uuid}@{domain}:{port}?type=tcp&security=tls&sni={sni}&fp=chrome&flow={flow}#vless-tls\"
         print(link)
         break
 "'
@@ -159,7 +170,7 @@ ssh {nickname} "sudo crontab -l 2>/dev/null | grep acme"
 
 ## Завершение
 
-После получения ссылки вернитесь к основному SKILL.md **Шаг 20** (Установка клиента Hiddify).
+После получения ссылки вернитесь к разделу **A4** в `SKILL.md` (клиенты и импорт ссылки) и проверьте подключение через `scripts/verify_vless.py`.
 
 ---
 

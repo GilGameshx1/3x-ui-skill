@@ -1,1027 +1,298 @@
-# 3x-ui-setup — Qwen Code Skill (v2.0)
-
-## Overview
-
-**Name:** 3x-ui-setup  
-**Version:** 2.0.0  
-**Description:** Complete VPN server setup from scratch. Takes a fresh VPS through full server hardening and 3x-ui installation with VLESS Reality or VLESS TLS.
-
-**Allowed Tools:** Bash, Read, Write, Edit
-
-**Use Case:** When user mentions v2ray, xray, vless, 3x-ui, proxy server, vpn server, or wants to set up encrypted proxy access on a VPS.
-
+---
+name: 3x-ui-vpn
+description: Deploy, audit, migrate or harden a 3x-ui/Xray VPN VPS.
+version: 3.0.0
+author: GilGameshx1 (port: Hermes Agent / DeepSeek)
+license: MIT
+metadata:
+  hermes:
+    tags: [vpn, xray, 3x-ui, vless, reality, vps, hardening, migration]
+    related_skills: []
 ---
 
-## Workflow Overview
+# 3x-ui VPN на VPS
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    3x-ui-setup Skill Flow                        │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  STEP 0: Collect Info & Validate                                │
-│  ├─ Determine mode (Remote/Local)                               │
-│  ├─ Collect credentials                                         │
-│  └─ Validate inputs ✓ NEW                                       │
-│                                                                  │
-│  PART 1: Server Hardening (Steps 1-13)                          │
-│  ├─ SSH key generation                                          │
-│  ├─ Root connection                                             │
-│  ├─ System update                                               │
-│  ├─ User creation + validation ✓ NEW                            │
-│  ├─ SSH key installation                                        │
-│  ├─ TEST login (CRITICAL)                                       │
-│  ├─ Firewall (UFW)                                              │
-│  ├─ Kernel hardening                                            │
-│  ├─ Time sync + packages (incl. SQLite3) ✓ NEW                  │
-│  └─ SSH config setup                                            │
-│                                                                  │
-│  PART 2: VPN Installation (Steps 14-22)                         │
-│  ├─ 3x-ui panel install                                         │
-│  ├─ BBR optimization                                            │
-│  ├─ ICMP stealth                                                │
-│  ├─ Protocol selection (Reality/TLS)                            │
-│  ├─ Reality scanner + inbound setup ✓ IMPROVED                  │
-│  ├─ Connection link generation                                  │
-│  ├─ Hiddify client setup                                        │
-│  ├─ Connection verification                                     │
-│  ├─ Guide file generation ✓ NEW                                 │
-│  └─ fail2ban + SSH lock                                         │
-│                                                                  │
-│  OUTPUT: Secured server + Working VPN + Guide file              │
-└─────────────────────────────────────────────────────────────────┘
-```
+Один навык на три задачи: развернуть VPN с нуля, проверить/починить живой сервер,
+переехать на новый IP. Обслуживает Xray/3x-ui (VLESS Reality или VLESS TLS),
+AmneziaWG и MTProto-прокси, если они есть.
 
----
+Отвечай по-русски. Команды и вывод — англоязычные, объяснения — русские.
 
-## PART 0: Information Collection & Validation
+Навык не зависит от конкретной модели: он написан как последовательность
+проверяемых шагов и shell-команд, а не как «вызовы инструментов». Годится для
+DeepSeek, Qwen, Claude, GPT — у любого агента с доступом к терминалу.
 
-### Step 0.1: Determine Execution Mode
+## Когда использовать
 
-**Remote Mode** (Qwen Code on local computer) - ASK for:
-1. Server IP address
-2. Root password (temporary, for initial connection)
-3. Desired username (3-16 chars, lowercase letters + numbers only)
-4. Server nickname (for SSH config)
-5. Has domain? (recommend "no" for Reality)
-6. Domain name (if yes to #5)
+- «Настрой VPN на новом VPS», «поставь 3x-ui / VLESS / Reality».
+- «Посмотри, всё ли в порядке на сервере», «VPN перестал подключаться».
+- «Сменился IP, надо перенастроить» / «переезжаем на другой сервер».
+- «Усиль сервер»: SSH, UFW, fail2ban, BBR, сертификаты.
+- «Выдай ссылку на подключение» / «добавь пользователя в панель».
 
-**Local Mode** (Qwen Code on the server itself) - ASK for:
-1. Desired username
-2. Server nickname
-3. Has domain?
-4. Domain name (if yes to #3)
+## Железные правила
 
-In Local mode, get server IP automatically:
-```bash
-curl -4 -s ifconfig.me
-```
+1. **«Готово» — только после сквозной проверки.** Правка конфига ничего не доказывает.
+   Подними локальный xray с socks-inbound до сервера и проверь exit IP
+   (`scripts/verify_vless.py`). Не видел PASS и нужный IP — не отчитывайся «работает».
+2. **Автооткат перед рискованным изменением** сети, файрвола или SSH:
+   `systemd-run --on-active=360 --unit=netguard /root/revert.sh`, после успешной
+   проверки — `systemctl stop netguard.timer`. Это единственная страховка, если доступ
+   отвалится; без неё не трогай `sshd` и `ufw`.
+3. **Не верь гайду, сгенерированному предыдущим ИИ.** Проверяй фактом: пароль панели —
+   POST на `/login`, BBR — `sysctl net.ipv4.tcp_congestion_control`, ICMP —
+   `sysctl net.ipv4.icmp_echo_ignore_all`, файрвол — `ufw status`, вход по ключу —
+   реальный `ssh -o BatchMode=yes`. В чужом гайде бывают неверный пароль, выдуманный
+   public key и заявленное, но не сделанное укрепление.
+4. **Секреты не сохраняются** — см. раздел «Политика секретов». Ни IP, ни паролей,
+   ни UUID, ни ключей, ни готовых `vless://` в файлах навыка и репозитория.
+5. **Публичный ключ Reality выводи из приватного:** `xray x25519 -i <privkey>`.
+   Значение из БД, гайда или «сгенерированное отдельным запуском» — не истина:
+   два отдельных вызова `x25519` дают две разные пары.
+6. **Бэкап до изменений:** БД x-ui, `/etc/network/interfaces`, `sysctl.d`, конфиг AWG,
+   скрипты запуска контейнеров — в `/root/vpn-backup-<дата>/`. Путь указать в отчёте.
 
-### Step 0.2: Input Validation ✓ NEW
+## Политика секретов
 
-**Validate IP Address:**
-```bash
-validate_ip() {
-    local ip=$1
-    if [[ $ip =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
-        IFS='.' read -ra octets <<< "$ip"
-        for octet in "${octets[@]}"; do
-            if (( octet < 0 || octet > 255 )); then
-                return 1
-            fi
-        done
-        return 0
-    fi
-    return 1
-}
+Что считается секретом: IP и hostname сервера, логин/пароль панели, UUID клиентов,
+приватные и публичные ключи Reality, `shortId`, `vless://`-ссылки, `tg://`-ссылки,
+секрет 2FA, ключи SSH.
 
-# Usage
-if ! validate_ip "$SERVER_IP"; then
-    echo "ERROR: Invalid IP address format"
-    exit 1
-fi
-```
+Правила:
 
-**Validate Username:**
-```bash
-validate_username() {
-    local username=$1
-    if [[ $username =~ ^[a-z][a-z0-9]{2,15}$ ]]; then
-        return 0
-    fi
-    return 1
-}
+- В файлах навыка и в репозитории — **только плейсхолдеры**: `<SERVER_IP>`, `<PORT>`,
+  `<UUID>`, `<PBK>`, `<SID>`, `<SNI>`, `<USER>`, `<PASS>`. Примеры без реальных значений.
+- Сгенерированный секрет показывается **один раз в чат** и дальше живёт у пользователя
+  (менеджер паролей / приложение). На сервере — только там, где его требует софт
+  (БД x-ui, `authorized_keys`).
+- Запрещено: `echo "пароль: $PASS"` в лог, запись гайда с кредами, `>> ~/.bash_history`,
+  пароль в аргументах команды (виден в `ps` и истории) — использовать stdin:
+  `x-ui setting -password` (спросит) или `read -rsp`.
+- Ссылку клиенту отдавай в чат или через подписку; файл на диске — только если
+  пользователь сам попросил, и тогда `chmod 600` + предупреждение.
+- Перед коммитом/публикацией: `bash scripts/check_no_secrets.sh` — падает на IPv4,
+  `vless://`, `BEGIN ... PRIVATE KEY`, `password=`. Это же в CI.
+- `.gitignore` закрывает `*guide*.md`, `*.db`, `*.key`, `*.pem`, `backup*/`.
 
-# Usage
-if ! validate_username "$USERNAME"; then
-    echo "ERROR: Username must be 3-16 chars, start with letter, lowercase only"
-    exit 1
-fi
-```
+Если пользователь сам прислал IP и пароль в чат — это его данные, работать можно,
+но в файлы навыка они не попадают ни при каких условиях.
 
-**Validate Domain (if provided):**
-```bash
-validate_domain() {
-    local domain=$1
-    if [[ $domain =~ ^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$ ]]; then
-        return 0
-    fi
-    return 1
-}
-```
+## Режим A. Свежий VPS
 
-**Check OS Compatibility:**
-```bash
-check_os_compatibility() {
-    if [ ! -f /etc/debian_version ]; then
-        echo "ERROR: Only Debian/Ubuntu systems are supported"
-        exit 1
-    fi
-    
-    local version=$(cat /etc/debian_version)
-    local major_version=$(echo $version | cut -d'.' -f1)
-    
-    if [ "$major_version" -lt 10 ]; then
-        echo "WARNING: Debian version < 10 may have compatibility issues"
-        read -p "Continue anyway? (y/N): " confirm
-        if [ "$confirm" != "y" ]; then
-            exit 0
-        fi
-    fi
-}
-```
+### A0. Вводные
 
----
+Спросить: IP, есть ли уже SSH-ключ, желаемое имя пользователя (3–16 символов,
+нижний регистр), ник для `~/.ssh/config`, есть ли домен (для Reality не нужен).
 
-## PART 1: Server Hardening
+Пароль root просить **только** если ключа нет, и сразу предупредить: после настройки
+вход по паролю выключается. Пароль не эхоить и не писать в файлы. Проверить ОС
+(`/etc/debian_version`, Debian 10+/Ubuntu 20.04+), что это свежая машина, и что
+провайдер не режет 443.
 
-### Execution Modes Comparison
-
-| Step | Remote Mode | Local Mode |
-|------|-------------|------------|
-| Step 1 | Generate SSH key on LOCAL | **SKIP** |
-| Step 2 | `ssh root@{SERVER_IP}` | Already on server |
-| Steps 3-4 | Run on server via root SSH | Run directly |
-| Step 5 | Install local public key on server | **SKIP** |
-| Step 6 | SSH test from LOCAL | Switch user: `su - {username}` |
-| Step 7 | **SKIP** (deferred) | **SKIP** (deferred) |
-| Steps 8-11 | `sudo` on server via SSH | `sudo` directly |
-| Step 12 | Write `~/.ssh/config` on LOCAL | **SKIP** |
-| Step 13 | Verify via `ssh {nickname}` | Run audit directly |
-| Part 2 | `ssh {nickname} "sudo ..."` | `sudo ...` directly |
-| Step 17A | Scanner via `ssh {nickname} '...'` | Scanner runs directly |
-| Step 22 | Generate guide + fail2ban + lock SSH | Generate guide → SCP → SSH key → fail2ban |
-
----
-
-### Step 1: Generate SSH Key (LOCAL) ✓ IMPROVED
+### A1. Гигиена сервера
 
 ```bash
-# Create SSH key with backup reminder
-ssh-keygen -t ed25519 -C "{username}@{nickname}" -f ~/.ssh/{nickname}_key -N ""
-
-# IMPORTANT: Backup reminder
-echo ""
-echo "⚠️  IMPORTANT: Backup your SSH key!"
-echo "Key location: ~/.ssh/{nickname}_key"
-echo ""
-echo "Recommended backup options:"
-echo "  1. Copy to USB drive"
-echo "  2. Save to password manager"
-echo "  3. Store in secure cloud storage"
-echo ""
-echo "If you lose this key, you may lose access to your server!"
-echo ""
-
-# Display public key
-cat ~/.ssh/{nickname}_key.pub
-```
-
----
-
-### Step 2: First Connection as Root
-
-```bash
-ssh root@{SERVER_IP}
-```
-
-Handle forced password change if prompted.
-
----
-
-### Step 3: System Update (as root)
-
-```bash
-echo "[3/22] ⏳ Updating system packages..."
 apt update && DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt upgrade -y
-echo "[3/22] ✓ System updated"
+apt install -y curl wget unzip sqlite3 chrony ufw fail2ban ca-certificates
+timedatectl set-ntp true
 ```
 
----
-
-### Step 4: Create Non-Root User ✓ IMPROVED
+Пользователь + ключ (ключ генерируется на клиенте, приватный не покидает клиент):
 
 ```bash
-# Generate strong password
-generate_password() {
-    openssl rand -base64 24 | tr -dc 'A-Za-z0-9!@#$%^&*' | head -c 24
-}
-
-USER_PASSWORD=$(generate_password)
-
-# Create user
-useradd -m -s /bin/bash {username}
-echo "{username}:${USER_PASSWORD}" | chpasswd
-usermod -aG sudo {username}
-
-echo "[4/22] ✓ User '{username}' created"
-echo "! Save this password temporarily: ${USER_PASSWORD}"
+adduser --disabled-password --gecos "" <USER>
+usermod -aG sudo <USER>
+install -d -m 700 -o <USER> -g <USER> /home/<USER>/.ssh
+# публичный ключ — через ssh-copy-id, не через echo в чат
+ssh-copy-id -i ~/.ssh/<NICK>_key.pub <USER>@<SERVER_IP>
 ```
 
----
+**Стоп-гейт:** `ssh -i ~/.ssh/<NICK>_key -o BatchMode=yes <USER>@<SERVER_IP> 'sudo -n true'`
+должен пройти. Не прошёл — не идти дальше, вход по паролю ещё работает, чинить сейчас.
 
-### Step 5: Install SSH Key
+UFW — с автооткатом (правило 2):
 
 ```bash
-mkdir -p /home/{username}/.ssh
-cat ~/.ssh/{nickname}_key.pub > /home/{username}/.ssh/authorized_keys
-chmod 700 /home/{username}/.ssh
-chmod 600 /home/{username}/.ssh/authorized_keys
-chown -R {username}:{username} /home/{username}/.ssh
-
-echo "[5/22] ✓ SSH key installed"
+systemd-run --on-active=420 --unit=ufw-revert sh -c 'ufw --force disable'
+ufw default deny incoming; ufw default allow outgoing
+ufw allow 22/tcp; ufw allow 80/tcp; ufw allow 443/tcp
+ufw --force enable; ufw status verbose
 ```
 
----
+Панель наружу **не открывать** — только `127.0.0.1` и SSH-туннель. Проверить, что
+новая SSH-сессия открывается, и снять таймер: `systemctl stop ufw-revert.timer`.
 
-### Step 6: TEST New User Login — CRITICAL
-
-```bash
-echo "[6/22] ⏳ Testing new user login..."
-
-# Test connection
-if ssh -i ~/.ssh/{nickname}_key -o StrictHostKeyChecking=no -o ConnectTimeout=10 {username}@{SERVER_IP} "sudo whoami"; then
-    echo "[6/22] ✓ SSH login test successful"
-else
-    echo "[6/22] ✗ SSH login test FAILED"
-    echo "Troubleshooting:"
-    echo "  1. Check key permissions: chmod 600 ~/.ssh/{nickname}_key"
-    echo "  2. Verify key was copied correctly"
-    echo "  3. Try reconnecting as root and re-check authorized_keys"
-    exit 1
-fi
-```
-
----
-
-### Step 7: Lock Down SSH — DEFERRED
-
-**SKIP** - Done in Step 22 after SSH key is verified.
-
----
-
-### Step 8: Firewall ✓ IMPROVED
+Ядро — отдельным файлом, не в `/etc/sysctl.conf`:
 
 ```bash
-echo "[8/22] ⏳ Configuring firewall..."
-
-sudo apt install -y ufw
-sudo ufw default deny incoming
-sudo ufw default allow outgoing
-sudo ufw allow ssh
-sudo ufw allow 80/tcp
-sudo ufw allow 443/tcp
-sudo ufw --force enable
-
-echo "[8/22] ✓ Firewall configured"
-sudo ufw status verbose
-```
-
----
-
-### Step 9: fail2ban — DEFERRED
-
-**SKIP** - Installed in Step 22.
-
----
-
-### Step 10: Kernel Hardening
-
-```bash
-echo "[10/22] ⏳ Applying kernel hardening..."
-
-sudo tee /etc/sysctl.d/99-security.conf << 'EOF'
+cat >/etc/sysctl.d/99-vpn-tuning.conf <<'EOF'
+net.core.default_qdisc = fq
+net.ipv4.tcp_congestion_control = bbr
 net.ipv4.conf.all.rp_filter = 1
-net.ipv4.conf.default.rp_filter = 1
 net.ipv4.conf.all.accept_redirects = 0
-net.ipv4.conf.default.accept_redirects = 0
-net.ipv4.conf.all.send_redirects = 0
-net.ipv4.conf.default.send_redirects = 0
 net.ipv4.tcp_syncookies = 1
-net.ipv4.conf.all.log_martians = 1
-net.ipv4.conf.default.log_martians = 1
-net.ipv4.icmp_echo_ignore_broadcasts = 1
-net.ipv4.conf.all.accept_source_route = 0
-net.ipv4.conf.default.accept_source_route = 0
 EOF
-
-sudo sysctl -p /etc/sysctl.d/99-security.conf
-
-echo "[10/22] ✓ Kernel hardening applied"
+sysctl --system
 ```
 
----
+ICMP-стелс — через sysctl (`net.ipv4.icmp_echo_ignore_all = 1`), а не правкой
+`/etc/ufw/before.rules`: `ufw reset`/`reload` возвращает свои правила и правка молча
+теряется.
 
-### Step 11: Time Sync + Base Packages ✓ IMPROVED (SQLite3 added)
+### A2. Панель 3x-ui
 
 ```bash
-echo "[11/22] ⏳ Installing base packages..."
-
-# Install packages including SQLite3 for 3x-ui database
-sudo apt install -y chrony curl wget unzip net-tools sqlite3
-
-sudo systemctl enable chrony
-sudo systemctl start chrony
-
-# Verify SQLite3 installation
-if command -v sqlite3 &> /dev/null; then
-    echo "[11/22] ✓ Base packages installed (including SQLite3)"
-    sqlite3 --version
-else
-    echo "[11/22] ! SQLite3 installation failed - will retry later"
-fi
+bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh)
 ```
 
----
-
-### Step 12: Configure Local SSH Config
+Установщик печатает логин/пароль один раз. Не пересказывать их в отчёт и не писать
+в файл. Сразу:
 
 ```bash
-echo "[12/22] ⏳ Configuring SSH shortcut..."
+x-ui setting -port <PANEL_PORT> -webBasePath /<RANDOM_PATH>
+x-ui restart
+```
 
-# Backup existing config
-if [ -f ~/.ssh/config ]; then
-    cp ~/.ssh/config ~/.ssh/config.backup
-fi
+Порт панели и базовый путь читаются из БД, а не из `/etc/x-ui/x-ui.sh` (там бывают
+устаревшие значения):
 
-# Add new host entry
-cat >> ~/.ssh/config << EOF
+```bash
+sqlite3 /etc/x-ui/x-ui.db "select key,value from settings where key in ('webPort','webBasePath');"
+```
 
-# 3x-ui server - {nickname}
-Host {nickname}
-    HostName {SERVER_IP}
-    User {username}
-    IdentityFile ~/.ssh/{nickname}_key
-    IdentitiesOnly yes
-    ServerAliveInterval 60
-    ServerAliveCountMax 3
+Рабочая БД — `/etc/x-ui/x-ui.db`. Пустой `/usr/local/x-ui/x-ui.db` — приманка.
+
+### A3. Reality
+
+Готовый inbound, порт 443 (или 8443, если 443 занят MTProto), `flow=xtls-rprx-vision`.
+
+Выбор SNI — `references/reality-sni.md`: цель должна отвечать TLS 1.3 + h2 с сервера,
+быть чужой и стабильной. Сканер подсети — только как подсказка, его вывод надо
+проверить `openssl s_client` и подставить в `dest`/`serverNames`.
+
+Ключи — **один** вызов, пара из одного запуска:
+
+```bash
+XRAY=$(ls /usr/local/x-ui/bin/xray-linux-*)
+read -r PRIV PUB <<<"$($XRAY x25519 | awk '/[Pp]rivate/{p=$NF} /[Pp]ublic|[Pp]assword/{q=$NF} END{print p, q}')"
+```
+
+В новых версиях Xray публичный ключ в выводе называется `Password` — парсить оба
+варианта. Проверка пары:
+
+```bash
+[ "$($XRAY x25519 -i "$PRIV" | awk '{print $NF}')" = "$PUB" ] && echo PAIR_OK
+```
+
+Inbound создаётся через API панели (`/panel/api/inbounds/add`) или вставкой в БД;
+`settings` и `streamSettings` — JSON-строки внутри JSON. `listen` оставить пустым
+(слушать все адреса), `decryption: "none"`.
+
+### A4. Ссылка и клиент
+
+Формат — `references/reality-link-format.md`. Ссылку отдать в чат; в файл — только
+по просьбе. Клиенты: Hiddify (универсальный), v2rayNG/NekoBox (Android),
+Streisand/V2Box (iOS), NekoRay/v2rayN (десктоп). `flow=xtls-rprx-vision` требует
+свежий клиент; старый молча не подключится — предупредить.
+
+### A5. Проверка (обязательно)
+
+```bash
+python3 scripts/verify_vless.py --ip <SERVER_IP> --port <PORT> --uuid <UUID> \
+        --pbk <PBK> --sni <SNI> --sid <SID> --flow xtls-rprx-vision --expect <SERVER_IP>
+```
+
+PASS = соединение установлено и exit IP равен адресу сервера. Дополнительно — что
+порт виден снаружи (API check-host.net, см. «Грабли»): curl с самого сервера на свой
+IP ничего не доказывает.
+
+### A6. Замок SSH — последним шагом
+
+Только после A5. Через drop-in, а не `sed` по `sshd_config` (строки там часто
+закомментированы, `sed 's/^PermitRootLogin.*/.../'` тихо ничего не меняет):
+
+```bash
+cat >/etc/ssh/sshd_config.d/99-hardening.conf <<'EOF'
+PermitRootLogin no
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PubkeyAuthentication yes
+MaxAuthTries 3
 EOF
-
-chmod 600 ~/.ssh/config
-
-echo "[12/22] ✓ SSH config updated"
+sshd -t && systemctl reload ssh
 ```
 
----
-
-### Step 13: Final Verification
-
-```bash
-echo "[13/22] ⏳ Running final verification..."
-
-ssh {nickname} "sudo ufw status"
-ssh {nickname} "sudo sysctl net.ipv4.conf.all.rp_filter"
-
-echo "[13/22] ✓ Part 1 complete - Server secured!"
-echo ""
-echo "═══════════════════════════════════════════"
-echo "  PART 1 COMPLETE: Server is now hardened"
-echo "═══════════════════════════════════════════"
-```
-
----
-
-## PART 2: VPN Installation (3x-ui)
-
-### Step 14: Install 3x-ui ✓ IMPROVED
-
-```bash
-echo "[14/22] ⏳ Installing 3x-ui panel..."
-
-ssh {nickname} "
-    curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh -o /tmp/3x-ui-install.sh
-    echo 'n' | sudo bash /tmp/3x-ui-install.sh
-"
-
-echo "[14/22] ✓ 3x-ui panel installed"
-```
-
----
-
-### Step 14b: Enable BBR
-
-```bash
-echo "[14b/22] ⏳ Enabling BBR optimization..."
-
-ssh {nickname} '
-current=$(sysctl -n net.ipv4.tcp_congestion_control)
-echo "Current congestion control: $current"
-if [ "$current" != "bbr" ]; then
-    echo "net.core.default_qdisc=fq" | sudo tee -a /etc/sysctl.conf
-    echo "net.ipv4.tcp_congestion_control=bbr" | sudo tee -a /etc/sysctl.conf
-    sudo sysctl -p
-    echo "✓ BBR enabled"
-else
-    echo "✓ BBR already active"
-fi
-'
-
-echo "[14b/22] ✓ BBR configuration complete"
-```
-
----
-
-### Step 15: Disable ICMP (Stealth)
-
-```bash
-echo "[15/22] ⏳ Disabling ICMP (stealth mode)..."
-
-ssh {nickname} "
-    sudo sed -i 's/-A ufw-before-input -p icmp --icmp-type echo-request -j ACCEPT/-A ufw-before-input -p icmp --icmp-type echo-request -j DROP/' /etc/ufw/before.rules
-    sudo sed -i 's/-A ufw-before-forward -p icmp --icmp-type echo-request -j ACCEPT/-A ufw-before-forward -p icmp --icmp-type echo-request -j DROP/' /etc/ufw/before.rules
-    sudo ufw reload
-"
-
-echo "[15/22] ✓ ICMP disabled (server won't respond to pings)"
-```
-
----
-
-### Step 16: Branch — Reality or TLS
-
-- **Path A:** VLESS Reality (NO domain) — RECOMMENDED → Step 17A
-- **Path B:** VLESS TLS (domain required) → `references/vless-tls.md`
-
----
-
-### Step 17A: Reality Scanner ✓ IMPROVED
-
-```bash
-echo "[17A/22] ⏳ Running Reality scanner..."
-
-ssh {nickname} '
-ARCH=$(dpkg --print-architecture)
-case "$ARCH" in
-    amd64) SA="64" ;;
-    arm64|aarch64) SA="arm64-v8a" ;;
-    *) echo "ERROR: Unsupported architecture: $ARCH"; exit 1 ;;
-esac
-
-echo "Downloading scanner for $ARCH..."
-curl -sL "https://github.com/XTLS/RealiTLScanner/releases/latest/download/RealiTLScanner-linux-${SA}" -o /tmp/scanner
-chmod +x /tmp/scanner
-
-# Verify binary
-if ! file /tmp/scanner | grep -q ELF; then
-    echo "ERROR: Scanner binary not valid for this architecture"
-    exit 1
-fi
-
-MY_IP=$(curl -4 -s ifconfig.me)
-SUBNET=$(echo $MY_IP | sed "s/\.[0-9]*$/.0\/24/")
-
-echo "Scanning subnet: $SUBNET"
-echo "This may take up to 2 minutes..."
-timeout 120 /tmp/scanner --addr "$SUBNET" 2>&1 | head -80
-'
-
-echo "[17A/22] ✓ Scanner complete - review results above"
-```
-
----
-
-### Step 18A: Create VLESS Reality Inbound ✓ COMPLETE
-
-```bash
-# Get panel info first
-echo "[18A/22] ⏳ Creating VLESS Reality inbound..."
-
-# Get session cookie
-ssh {nickname} '
-PANEL_PORT=$(sudo cat /etc/x-ui/x-ui.sh 2>/dev/null | grep -oP "PORT=\K\d+" || echo "54321")
-WEB_BASE_PATH=$(sudo cat /etc/x-ui/x-ui.sh 2>/dev/null | grep -oP "WEB_BASE_PATH=\K[^\"]+" || echo "")
-curl -sk -c /tmp/3x-cookie -b /tmp/3x-cookie -X POST "https://127.0.0.1:${PANEL_PORT}/${WEB_BASE_PATH}/login" \
-    -H "Content-Type: application/x-www-form-urlencoded" \
-    -d "username={panel_username}&password={panel_password}"
-'
-
-# Generate keys
-PRIVATE_KEY=$(ssh {nickname} "sudo /usr/local/x-ui/bin/xray-linux-* x25519 2>/dev/null | grep 'Private key' | awk '{print \$3}'")
-PUBLIC_KEY=$(ssh {nickname} "sudo /usr/local/x-ui/bin/xray-linux-* x25519 2>/dev/null | grep 'Public key' | awk '{print \$3}'")
-CLIENT_UUID=$(ssh {nickname} "sudo /usr/local/x-ui/bin/xray-linux-* uuid 2>/dev/null | head -1")
-SHORT_ID=$(ssh {nickname} "openssl rand -hex 8")
-
-echo "Generated keys:"
-echo "  Private Key: ${PRIVATE_KEY:0:20}..."
-echo "  Public Key: ${PUBLIC_KEY:0:20}..."
-echo "  Client UUID: ${CLIENT_UUID:0:20}..."
-echo "  Short ID: ${SHORT_ID}"
-
-# Create inbound via API
-ssh {nickname} "
-PANEL_PORT={panel_port}
-WEB_BASE_PATH={web_base_path}
-
-curl -sk -c /tmp/3x-cookie -b /tmp/3x-cookie -X POST \"https://127.0.0.1:\${PANEL_PORT}/\${WEB_BASE_PATH}/panel/api/inbounds/add\" \
-    -H 'Content-Type: application/json' \
-    -d '{
-        \"up\": 0,
-        \"down\": 0,
-        \"total\": 0,
-        \"remark\": \"vless-reality\",
-        \"enable\": true,
-        \"expiryTime\": 0,
-        \"listen\": \"\",
-        \"port\": 443,
-        \"protocol\": \"vless\",
-        \"settings\": \"{\\\"clients\\\":[{\\\"id\\\":\\\"${CLIENT_UUID}\\\",\\\"flow\\\":\\\"xtls-rprx-vision\\\",\\\"email\\\":\\\"user1\\\",\\\"limitIp\\\":0,\\\"totalGB\\\":0,\\\"expiryTime\\\":0,\\\"enable\\\":true}],\\\"decryption\\\":\\\"none\\\",\\\"fallbacks\\\":[]}\",
-        \"streamSettings\": \"{\\\"network\\\":\\\"tcp\\\",\\\"security\\\":\\\"reality\\\",\\\"externalProxy\\\":[],\\\"realitySettings\\\":{\\\"show\\\":false,\\\"dest\\\":\\\"google.com:443\\\",\\\"xver\\\":0,\\\"serverNames\\\":[\\\"google.com\\\"],\\\"privateKey\\\":\\\"${PRIVATE_KEY}\\\",\\\"minClientVer\\\":\\\"\\\",\\\"maxClientVer\\\":\\\"\\\",\\\"maxTimeDiff\\\":0,\\\"shortIds\\\":[\\\"${SHORT_ID}\\\"],\\\"settings\\\":{\\\"publicKey\\\":\\\"${PUBLIC_KEY}\\\",\\\"fingerprint\\\":\\\"chrome\\\"}}}\",
-        \"sniffing\": \"{\\\"enabled\\\":true,\\\"destOverride\\\":[\\\"http\\\",\\\"tls\\\",\\\"quic\\\",\\\"fakedns\\\"],\\\"metadataOnly\\\":false,\\\"routeOnly\\\":false}\",
-        \"allocate\": \"{\\\"strategy\\\":\\\"always\\\",\\\"refresh\\\":5,\\\"concurrency\\\":3}\"
-    }'
-"
-
-echo "[18A/22] ✓ VLESS Reality inbound created"
-```
-
----
-
-### Step 19: Get Connection Link ✓ IMPROVED
-
-```bash
-echo "[19/22] ⏳ Generating connection link..."
-
-VLESS_LINK=$(ssh {nickname} '
-PANEL_PORT={panel_port}
-WEB_BASE_PATH={web_base_path}
-
-curl -sk -b /tmp/3x-cookie "https://127.0.0.1:${PANEL_PORT}/${WEB_BASE_PATH}/panel/api/inbounds/list" | python3 -c "
-import json, sys
-data = json.load(sys.stdin)
-for inb in data.get(\"obj\", []):
-    if inb.get(\"protocol\") == \"vless\":
-        settings = json.loads(inb[\"settings\"])
-        stream = json.loads(inb[\"streamSettings\"])
-        client = settings[\"clients\"][0]
-        uuid = client[\"id\"]
-        port = inb[\"port\"]
-        security = stream.get(\"security\", \"none\")
-        if security == \"reality\":
-            rs = stream[\"realitySettings\"]
-            sni = rs[\"serverNames\"][0]
-            pbk = rs[\"settings\"][\"publicKey\"]
-            sid = rs[\"shortIds\"][0]
-            fp = rs[\"settings\"].get(\"fingerprint\", \"chrome\")
-            flow = client.get(\"flow\", \"\")
-            my_ip = \"$(curl -4 -s ifconfig.me)\"
-            link = f\"vless://{uuid}@{my_ip}:{port}?type=tcp&security=reality&pbk={pbk}&fp={fp}&sni={sni}&sid={sid}&spx=%2F&flow={flow}#vless-reality\"
-            print(link)
-            break
-"
-')
-
-echo "[19/22] ✓ Connection link generated"
-echo ""
-echo "VLESS Link:"
-echo "${VLESS_LINK}"
-echo ""
-```
-
----
-
-### Step 20: Install Hiddify Client
-
-Guide user to install one of the following clients on their device:
-
-#### 📱 Android
-
-| Клиент | Описание | Ссылка |
-|--------|----------|--------|
-| **Hiddify** | Универсальный, простой | [GitHub](https://github.com/hiddify/hiddify-app/releases) |
-| **NekoBox** | Продвинутый, много функций | [GitHub](https://github.com/MatsuriDayo/NekoBoxForAndroid/releases) |
-| **v2rayNG** | Классический | [GitHub](https://github.com/2dust/v2rayNG/releases) |
-| **Husi** | Лёгкий | [GitHub](https://github.com/husi-network/husi-android/releases) |
-
-#### 🍎 iOS
-
-| Клиент | Описание | Ссылка |
-|--------|----------|--------|
-| **Hiddify** | Универсальный | [GitHub](https://github.com/hiddify/hiddify-app/releases) |
-| **Streisand** | Простой | [App Store](https://apps.apple.com/app/streisand/id6450534064) |
-| **V2Box** | Бесплатный | [App Store](https://apps.apple.com/app/v2box-v2ray-client/id1552141085) |
-| **Shadowrocket** | Платный ($2.99) | [App Store](https://apps.apple.com/app/shadowrocket/id932747118) |
-
-#### 🖥️ Desktop (Windows/macOS/Linux)
-
-| Клиент | Описание | Ссылка |
-|--------|----------|--------|
-| **Hiddify** | Универсальный | [GitHub](https://github.com/hiddify/hiddify-app/releases) |
-| **NekoRay** | Для Windows/Linux | [GitHub](https://github.com/MatsuriDayo/nekoray/releases) |
-| **v2rayN** | Для Windows | [GitHub](https://github.com/2dust/v2rayN/releases) |
-| **FoXray** | Для macOS | [App Store](https://apps.apple.com/app/foxray/id6448104677) |
-
-#### 🔧 Установка и настройка
-
-1. **Скачайте** подходящий клиент из таблицы выше
-2. **Установите** приложение на устройство
-3. **Импортируйте** VLESS ссылку из Step 19:
-   - Нажмите "+" или "Add Profile"
-   - Вставьте ссылку
-   - Сохраните
-4. **Подключитесь** к серверу
-
-**Рекомендация:** Для начинающих используйте **Hiddify** — самый простой и универсальный.
-
----
-
-### Step 21: Verify Connection
-
-```bash
-echo "[21/22] ⏳ Verifying connection..."
-
-ssh {nickname} "
-    sudo x-ui status
-    ss -tlnp | grep -E '443|{panel_port}'
-"
-
-echo "[21/22] ✓ Verification complete"
-```
-
----
-
-### Step 22: Generate Guide File & Finalize ✓ COMPLETE
-
-**Generate Guide File:**
-
-```bash
-echo "[22/22] ⏳ Generating guide file..."
-
-# Get panel info
-PANEL_PORT=$(ssh {nickname} "sudo cat /etc/x-ui/x-ui.sh 2>/dev/null | grep -oP 'PORT=\K\d+' || echo '54321'")
-PANEL_USER="{panel_username}"
-PANEL_PASS="{panel_password}"
-
-# Create guide file
-cat > ~/vpn-{nickname}-guide.md << EOF
-# VPN Connection Guide - ${nickname}
-
-Generated: $(date)
-
----
-
-## 🔐 Server Connection Details
-
-| Setting | Value |
-|---------|-------|
-| IP Address | ${SERVER_IP} |
-| Username | ${username} |
-| SSH Key | ~/.ssh/${nickname}_key |
-| SSH Command | \`ssh ${nickname}\` |
-
-### SSH Key Backup ⚠️
-
-**IMPORTANT:** Backup your SSH key immediately!
-- Location: \`~/.ssh/${nickname}_key\`
-- Backup to: USB drive, password manager, or secure cloud
-
-If you lose this key, you may lose access to your server!
-
----
-
-## 🖥️ 3x-ui Panel Access
-
-| Setting | Value |
-|---------|-------|
-| URL | https://${SERVER_IP}:${PANEL_PORT}/${WEB_BASE_PATH} |
-| Username | ${PANEL_USER} |
-| Password | ${PANEL_PASS} |
-
-### Access via SSH Tunnel (Recommended)
-
-\`\`\`bash
-ssh -L ${PANEL_PORT}:127.0.0.1:${PANEL_PORT} ${nickname}
-\`\`\`
-
-Then open: \`https://127.0.0.1:${PANEL_PORT}/${WEB_BASE_PATH}\`
-
----
-
-## 🔗 VPN Connection
-
-**Protocol:** VLESS Reality
-
-**Connection Link:**
-\`\`\`
-${VLESS_LINK}
-\`\`\`
-
-### 📱 Quick Import — Android
-
-| Клиент | Ссылка |
-|--------|--------|
-| **Hiddify** | [GitHub](https://github.com/hiddify/hiddify-app/releases) |
-| **NekoBox** | [GitHub](https://github.com/MatsuriDayo/NekoBoxForAndroid/releases) |
-| **v2rayNG** | [GitHub](https://github.com/2dust/v2rayNG/releases) |
-
-### 🍎 Quick Import — iOS
-
-| Клиент | Ссылка |
-|--------|--------|
-| **Hiddify** | [GitHub](https://github.com/hiddify/hiddify-app/releases) |
-| **Streisand** | [App Store](https://apps.apple.com/app/streisand/id6450534064) |
-| **V2Box** | [App Store](https://apps.apple.com/app/v2box-v2ray-client/id1552141085) |
-
-### 🖥️ Quick Import — Desktop
-
-| Клиент | Платформа | Ссылка |
-|--------|-----------|--------|
-| **Hiddify** | Windows/macOS/Linux | [GitHub](https://github.com/hiddify/hiddify-app/releases) |
-| **NekoRay** | Windows/Linux | [GitHub](https://github.com/MatsuriDayo/nekoray/releases) |
-| **v2rayN** | Windows | [GitHub](https://github.com/2dust/v2rayN/releases) |
-
-### 🔧 How to Import
-
-1. **Download** and install your preferred client
-2. **Open** the application
-3. **Tap** "+" or "Add Profile" or "Import from Clipboard"
-4. **Paste** the VLESS link above
-5. **Save** and **Connect**!
-
-**Recommendation:** Use **Hiddify** for beginners — simplest and most universal.
-
----
-
-## 🛡️ Security Status
-
-| Feature | Status |
-|---------|--------|
-| SSH Key Auth | ✓ Enabled |
-| Root Login | ✗ Disabled |
-| Password Auth | ✗ Disabled |
-| Firewall (UFW) | ✓ Enabled |
-| fail2ban | ✓ Enabled |
-| Kernel Hardening | ✓ Applied |
-| ICMP (Ping) | ✗ Blocked (Stealth) |
-| BBR Optimization | ✓ Enabled |
-
----
-
-## 📋 Common Commands
-
-\`\`\`bash
-# Connect to server
-ssh ${nickname}
-
-# Check panel status
-sudo x-ui status
-
-# View panel logs
-sudo x-ui log
-
-# Restart panel
-sudo x-ui restart
-
-# Reset panel password
-sudo x-ui setting -reset
-
-# Check firewall status
-sudo ufw status
-
-# Check fail2ban status
-sudo fail2ban-client status
-\`\`\`
-
----
-
-## 🔧 Troubleshooting
-
-### Connection Issues
-1. Verify Hiddify is updated to latest version
-2. Re-import the VLESS link
-3. Try different SNI in Hiddify settings
-
-### Panel Access Issues
-1. Use SSH tunnel (see above)
-2. Check panel status: \`sudo x-ui status\`
-3. Reset password: \`sudo x-ui setting -reset\`
-
-### Server Access Issues
-1. Check SSH key permissions: \`chmod 600 ~/.ssh/${nickname}_key\`
-2. Verify server is running: \`ping ${SERVER_IP}\` (will fail if ICMP blocked - normal!)
-3. Try SSH: \`ssh -v ${nickname}\`
-
----
-
-## 📞 Support
-
-- Skill Repository: https://github.com/GilGameshx1/3x-ui-skill
-- 3x-ui Documentation: https://github.com/MHSanaei/3x-ui/wiki
-- Hiddify Support: https://github.com/hiddify/hiddify-app
-
----
-
-## ⚠️ Security Reminders
-
-1. **NEVER** share your SSH private key
-2. **NEVER** expose panel to public internet
-3. **ALWAYS** use SSH tunnel for panel access
-4. **BACKUP** your SSH key to multiple locations
-5. **UPDATE** regularly: \`sudo x-ui update\`
-
----
-
-*Generated by 3x-ui-setup Skill for Qwen Code*
-EOF
-
-echo "[22/22] ✓ Guide file created: ~/vpn-{nickname}-guide.md"
-```
-
-**Install fail2ban and Lock SSH:**
-
-```bash
-# Install fail2ban
-ssh {nickname} "
-    sudo apt install -y fail2ban
-    sudo systemctl enable fail2ban
-    sudo systemctl start fail2ban
-"
-
-# Lock down SSH (disable root and password auth)
-ssh {nickname} "
-    sudo sed -i 's/^PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
-    sudo sed -i 's/^PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
-    sudo sed -i 's/^PubkeyAuthentication.*/PubkeyAuthentication yes/' /etc/ssh/sshd_config
-    sudo systemctl restart sshd
-"
-
-echo ""
-echo "═══════════════════════════════════════════"
-echo "  PART 2 COMPLETE: VPN is now running!"
-echo "═══════════════════════════════════════════"
-echo ""
-echo "✓ Guide file: ~/vpn-{nickname}-guide.md"
-echo "✓ fail2ban installed"
-echo "✓ SSH locked down (root/password disabled)"
-echo ""
-echo "🎉 All done! Your VPN is ready to use!"
-```
-
----
-
-## Critical Rules
-
-### Part 1 (Server)
-1. **NEVER skip Step 6** (test login)
-2. **NEVER disable root before confirming new user works**
-3. **NEVER store passwords in files** (except temporary guide)
-4. **If connection drops** after password change — reconnect
-5. **If Step 6 fails** — fix before proceeding
-6. **Generate SSH key BEFORE first connection**
-7. **All operations after Step 6 use sudo**
-8. **Steps 7 and 9 are DEFERRED** to Step 22
-9. **ALWAYS remind user to backup SSH key**
-
-### Part 2 (VPN)
-10. **NEVER expose panel to internet** — SSH tunnel only
-11. **NEVER skip firewall configuration**
-12. **ALWAYS save panel credentials**
-13. **ALWAYS verify connection works**
-14. **Ask before every destructive action**
-15. **ALWAYS generate guide file**
-16. **Lock SSH + fail2ban LAST** (Step 22)
-17. **NEVER leave password auth enabled** after setup
-18. **SQLite3 must be installed** for 3x-ui database
-
----
-
-## x-ui CLI Reference
-
-```bash
-x-ui start          # Start panel
-x-ui stop           # Stop panel
-x-ui restart        # Restart panel
-x-ui status         # Check status
-x-ui setting -reset # Reset username/password
-x-ui log            # View logs
-x-ui cert           # Manage SSL certificates
-x-ui update         # Update to latest version
-```
-
----
-
-## SQLite3 Database Management ✓ NEW
-
-The 3x-ui panel uses SQLite3 for its database:
-
-**Database Location:** `/etc/x-ui/x-ui.db`
-
-**Backup Database:**
-```bash
-ssh {nickname} "sudo cp /etc/x-ui/x-ui.db /etc/x-ui/x-ui.db.backup.$(date +%Y%m%d)"
-```
-
-**Restore Database:**
-```bash
-ssh {nickname} "sudo cp /etc/x-ui/x-ui.db.backup.YYYYMMDD /etc/x-ui/x-ui.db && sudo x-ui restart"
-```
-
-**Query Database:**
-```bash
-ssh {nickname} "sudo sqlite3 /etc/x-ui/x-ui.db '.tables'"
-ssh {nickname} "sudo sqlite3 /etc/x-ui/x-ui.db 'SELECT * FROM inbounds;'"
-```
-
-**Export Database:**
-```bash
-scp {nickname}:/etc/x-ui/x-ui.db ~/backup-x-ui-$(date +%Y%m%d).db
-```
-
----
-
-## Rollback Script ✓ NEW
-
-Create rollback script for emergency recovery:
-
-```bash
-cat > ~/3x-ui-rollback.sh << 'ROLLBACK'
-#!/bin/bash
-# 3x-ui-setup Rollback Script
-
-echo "=== 3x-ui-setup Rollback ==="
-echo ""
-echo "This script will:"
-echo "  1. Remove 3x-ui panel"
-echo "  2. Remove non-root user"
-echo "  3. Restore SSH to default"
-echo "  4. Disable firewall"
-echo ""
-read -p "Continue? (y/N): " confirm
-
-if [ "$confirm" != "y" ]; then
-    echo "Cancelled"
-    exit 0
-fi
-
-# Remove 3x-ui
-echo "Removing 3x-ui..."
-sudo /usr/local/x-ui/x-ui.sh uninstall
-
-# Remove user (replace with actual username)
-echo "Enter username to remove:"
-read username
-sudo userdel -r $username 2>/dev/null
-
-# Restore SSH
-echo "Restoring SSH defaults..."
-sudo sed -i 's/^PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
-sudo sed -i 's/^PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
-sudo systemctl restart sshd
-
-# Disable firewall
-echo "Disabling firewall..."
-sudo ufw --force disable
-
-echo ""
-echo "Rollback complete!"
-echo "Server will need manual cleanup for:"
-echo "  - Kernel hardening (/etc/sysctl.d/99-security.conf)"
-echo "  - fail2ban configuration"
-echo "  - SSH config entries"
-ROLLBACK
-
-chmod +x ~/3x-ui-rollback.sh
-```
-
----
-
-## Troubleshooting
-
-| Problem | Solution |
-|---------|----------|
-| Connection drops after password change | Normal — reconnect with new credentials |
-| Permission denied (publickey) | Check key path/permissions (700/600) |
-| Host key verification failed | `ssh-keygen -R {SERVER_IP}` |
-| x-ui install fails | `sudo apt install -y curl tar` |
-| Panel not accessible | Use SSH tunnel |
-| Reality not connecting | Wrong SNI — re-run scanner |
-| Hiddify shows error | Update Hiddify, re-add link |
-| Forgot panel password | `sudo x-ui setting -reset` |
-| SQLite3 database error | `sudo apt install --reinstall sqlite3` |
-| Database corrupted | Restore from backup |
-
----
-
-## Version History
-
-- **v2.0.0** - Complete refactor with SQLite3 support, input validation, progress indicators, rollback script
-- **v1.0.0** - Initial adaptation from Claude Code skill
+`sshd -t` до рестарта, автооткат (правило 2) — до правки, проверка новой сессией —
+после. fail2ban включить здесь же, `ignoreip` — актуальный админский IP.
+
+## Режим B. Аудит и ремонт живого сервера
+
+1. `bash scripts/server_audit.sh` — ОС, адреса, маршрут, порты, юниты, docker, ufw,
+   `sshd -T`, sysctl, серты, диск, обновления. Скрипт только читает.
+2. Сверить заявленное с фактическим (правило 3) и составить таблицу «заявлено /
+   на самом деле / чем проверено».
+3. Типовые поломки — раздел «Грабли».
+4. Любая правка → проверка `verify_vless.py` → отчёт.
+
+## Режим C. Смена IP
+
+Порядок и подводные камни — `references/ip-migration.md`. Коротко: новый IP уже на
+интерфейсе и маршрутизируется → `src` в default route → SNAT для docker → пересоздать
+контейнеры, которые узнают внешний IP при старте → сертификат на новый адрес →
+сквозная проверка → снять автооткат → почистить старый IP из конфигов.
+
+## Грабли
+
+- **Docker MASQUERADE берёт первый IPv4 на интерфейсе**, а не `src` из маршрута:
+  после смены маршрута контейнеры продолжают выходить со старого IP. Лечится SNAT
+  (`references/ip-migration.md`).
+- **Docker при старте вставляет свои nat-правила в начало POSTROUTING** — свой SNAT
+  вешать через drop-in `docker.service` (`ExecStartPost`), иначе после рестарта он
+  окажется после MASQUERADE и молча не сработает.
+- **Контейнер, определяющий внешний IP при старте** (официальный
+  `telegrammessenger/proxy` делает `curl .../myIp` в `run.sh`), надо пересоздавать
+  после смены IP. Смотри `docker exec <c> cat /run.sh`.
+- **Let's Encrypt не выдаёт серт на IP в профиле по умолчанию:** нужен
+  `acme.sh --issue -d <IP> --standalone --cert-profile shortlived`. IP-серты живут
+  ~6 дней, продление по ARI; без `--reloadcmd "systemctl restart x-ui"` панель
+  останется со старым.
+- **`modprobe tcp_bbr` → «Module bbr not found»** при существующем `tcp_bbr.ko`:
+  устаревший `modules.dep` → `depmod -a $(uname -r)`, затем modprobe.
+- **`ufw --force reset && ufw enable` оставляет `ufw.service` в inactive (dead)** при
+  живых правилах. Проверяй `ufw status`, а не `is-active`; `systemctl start ufw`
+  приводит юнит в норму.
+- **Порты, опубликованные docker (`-p 443:443`), обходят UFW** — политика INPUT на них
+  не действует; закрывать через `-p 127.0.0.1:` или цепочку DOCKER-USER.
+- **AmneziaWG:** приватный ключ клиента есть только на устройстве, конфиг на сервере
+  пересоздать нельзя — инструктируй менять `Endpoint = <IP>:<PORT>` в приложении.
+- **Xray предупреждает «VLESS (with no Flow) is deprecated»** — предлагай
+  `xtls-rprx-vision`, но не меняй молча: потребуется обновить ссылку.
+- **Клиент без `flow` в 26.x** — при тесте получишь FAIL «соединение не установлено».
+  Перепроверь `--flow ''` прежде чем искать проблему в ключах и портах; у клиента с
+  `subId` подписка отдаст новую ссылку сама.
+- **2FA в 3x-ui — это TOTP, а не Telegram-код:** `twoFactorEnable=1`,
+  `twoFactorToken=<base32>` в `settings`. Проверять реально: без кода и с неверным
+  кодом вход отклоняется, с верным — проходит. Аварийный выход —
+  `x-ui setting -resetTwoFactor`. Секрет 2FA в файлы не писать: только `otpauth://`
+  в чат.
+- **Внешняя проверка порта без своего браузера — API check-host.net.** Запрос →
+  `request_id`, результат через ~12 с; `null` вместо узлов — рано, подожди ещё.
+
+## Отчёт
+
+Что сделано и **чем проверено** (PASS теста, exit IP, коды ответов), что пользователь
+должен обновить на устройствах (ссылка, Endpoint, tg-ссылка), что осталось и какие
+риски. Секреты в отчёт не копировать: «пароль выдал в чате выше» / «ссылка в чате».
+
+## Файлы
+
+- `scripts/server_audit.sh` — read-only сбор состояния сервера.
+- `scripts/verify_vless.py` — сквозная проверка VLESS Reality через локальный socks.
+- `scripts/check_no_secrets.sh` — страж репозитория: IP, пароли, ключи, ссылки.
+- `scripts/backup-db.sh`, `scripts/restore-db.sh` — БД x-ui.
+- `scripts/rollback.sh` — откат установки (панель, пользователь, SSH), с подтверждением.
+- `references/reality-sni.md` — как выбрать SNI и не сломать Reality.
+- `references/reality-link-format.md` — из чего собирается `vless://`.
+- `references/vless-tls.md` — вариант с доменом и сертификатом.
+- `references/ip-migration.md` — переезд на новый IP.
+- `references/fallback-nginx.md` — страница-заглушка для TLS-варианта.

@@ -16,15 +16,29 @@ Thumbs.db
 *.tmp
 *.bak
 
-# Guide files (contain sensitive info)
+# Файлы с секретами: гайды, выгрузки, бэкапы (в репозиторий не попадают никогда)
 *guide*.md
 vpn-*.md
-
-# Backup files
-*.backup
-*.backup.*
-x-ui.db.backup*
-
-# SSH keys (never commit!)
+*.db
+*.db-journal
+*.db-wal
+*.pem
+*.key
+*.crt
 *_key
 *_key.pub
+.env
+.env.*
+secrets.*
+*.ovpn
+*.conf.bak
+
+# Каталоги бэкапов
+backup/
+backup-*/
+vpn-backup-*/
+x-ui-backups/
+
+# Python
+__pycache__/
+*.pyc
