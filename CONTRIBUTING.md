@@ -244,6 +244,28 @@ refactor: оптимизировать проверку зависимостей
 
 ---
 
+## Тесты и проверки
+
+Правка не считается сделанной, пока не прошли:
+
+```bash
+bash scripts/check_no_secrets.sh --all           # секреты в файлах
+shellcheck -x -S warning scripts/*.sh install.sh # синтаксис и типовые ошибки
+bats tests/                                      # 25 тестов, VPN не нужен
+python3 -m py_compile scripts/lib/xui.py scripts/verify_vless.py
+```
+
+Тесты поднимают фальшивую панель 3x-ui (`tests/fake_panel.py`) на временной БД и
+проверяют обе схемы API — новую (`/panel/api/clients/*`) и старую
+(`/panel/api/inbounds/addClient`). Живой сервер для тестов не требуется, и это
+намеренно: тест не должен трогать чужой VPN.
+
+Правила, которые проверяет `check_no_secrets.sh`: только плейсхолдеры
+(`<SERVER_IP>`, `<PBK>`, `<PASS>`) и TEST-NET `203.0.113.0/24`; никаких реальных
+адресов, UUID, ключей, готовых `vless://`/`hysteria2://` и паролей в примерах.
+
+---
+
 ## 🙏 Благодарности
 
 Спасибо всем контрибьюторам за ваш вклад!

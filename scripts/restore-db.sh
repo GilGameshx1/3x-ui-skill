@@ -1,141 +1,115 @@
-#!/bin/bash
-# 3x-ui SQLite3 Database Restore Script
-# Version: 2.0.0
+#!/usr/bin/env bash
+# Восстановление БД 3x-ui из бэкапа: .db, .db.gz, .db.age.
 #
-# This script restores a 3x-ui SQLite3 database from backup.
+#   scripts/restore-db.sh                       показать копии и спросить файл
+#   scripts/restore-db.sh /root/x-ui-backups/x-ui-20260101-041700.db.gz
+#   scripts/restore-db.sh --yes <файл>          без интерактивного подтверждения
+#   scripts/restore-db.sh --age-identity /root/age.key <файл.age>
+#
+# Порядок: копия текущей БД → стоп панели → распаковка/расшифровка во временный
+# файл → integrity_check → подмена → старт → проверка. Если что-то не сошлось,
+# текущая БД возвращается на место.
+set -euo pipefail
 
-set -e
+DB=${XUI_DB:-/etc/x-ui/x-ui.db}
+DIR=${BACKUP_DIR:-/root/x-ui-backups}
+AGE_ID=${AGE_IDENTITY:-/root/age.key}
+ASSUME_YES=0
+BACKUP_FILE=""
 
-# Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m'
+err() { printf 'ОШИБКА: %s\n' "$*" >&2; }
 
-# Configuration
-DB_PATH="/etc/x-ui/x-ui.db"
-BACKUP_DIR="/root/x-ui-backups"
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --db)           DB=${2:?нужен путь}; shift ;;
+        --dir)          DIR=${2:?нужен путь}; shift ;;
+        --age-identity) AGE_ID=${2:?нужен путь}; shift ;;
+        --yes|-y)       ASSUME_YES=1 ;;
+        -h|--help)      sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -*)             err "неизвестный флаг: $1"; exit 64 ;;
+        *)              BACKUP_FILE=$1 ;;
+    esac
+    shift
+done
 
-echo -e "${BLUE}╔════════════════════════════════════════════════════════╗${NC}"
-echo -e "${BLUE}║     3x-ui SQLite3 Database Restore Script              ║${NC}"
-echo -e "${BLUE}╚════════════════════════════════════════════════════════╝${NC}"
-echo ""
+command -v sqlite3 >/dev/null || { err "нет sqlite3"; exit 1; }
 
-# Check if running as root
-if [ "$EUID" -ne 0 ]; then
-    echo -e "${RED}ERROR: This script must be run as root${NC}"
-    echo "Usage: sudo $0 [backup-file]"
+if [[ -z $BACKUP_FILE ]]; then
+    [[ -d $DIR ]] || { err "нет каталога с бэкапами: $DIR"; exit 1; }
+    mapfile -t list < <(find "$DIR" -maxdepth 1 -type f \
+        \( -name 'x-ui-*.db*' -o -name 'x-ui.db.backup.*' \) | sort -r)
+    ((${#list[@]})) || { err "в $DIR нет бэкапов"; exit 1; }
+    printf '%s\n' "${list[@]}"
+    read -r -p "Файл для восстановления: " BACKUP_FILE
+    [[ $BACKUP_FILE == /* ]] || BACKUP_FILE="$DIR/$BACKUP_FILE"
+fi
+
+[[ -f $BACKUP_FILE ]] || { err "нет файла: $BACKUP_FILE"; exit 1; }
+
+echo "Восстановление: $BACKUP_FILE"
+echo "Цель:           $DB"
+
+if [[ $ASSUME_YES -ne 1 ]]; then
+    read -r -p "Текущая БД будет заменена. Введите YES: " confirm
+    [[ $confirm == YES ]] || { echo "Отменено."; exit 0; }
+fi
+
+TMP=$(mktemp)
+CURRENT=""
+cleanup() { rm -f "$TMP"; }
+trap cleanup EXIT
+
+# 1. Развернуть бэкап во временный файл (до остановки панели).
+case "$BACKUP_FILE" in
+    *.age)
+        command -v age >/dev/null || { err "нужен age для .age-бэкапа"; exit 1; }
+        [[ -r $AGE_ID ]] || { err "нет ключа age: $AGE_ID"; exit 1; }
+        age -d -i "$AGE_ID" "$BACKUP_FILE" > "$TMP" ;;
+    *.gz)
+        gzip -dc "$BACKUP_FILE" > "$TMP" ;;
+    *.bz2)
+        bzip2 -dc "$BACKUP_FILE" > "$TMP" ;;
+    *)
+        cp "$BACKUP_FILE" "$TMP" ;;
+esac
+
+integrity=$(sqlite3 "$TMP" "pragma integrity_check;" 2>/dev/null | head -1 || true)
+[[ $integrity == ok ]] || { err "бэкап не прошёл integrity_check: $integrity"; exit 1; }
+echo "  integrity ok (до остановки панели)"
+[[ $(sqlite3 "$TMP" "select count(*) from inbounds;" 2>/dev/null) =~ ^[0-9]+$ ]] \
+    || { err "в файле нет таблицы inbounds — это не БД 3x-ui"; exit 1; }
+
+# 2. Сохранить текущую БД (WAL-safe, иначе последние клиенты теряются).
+if [[ -f $DB ]]; then
+    CURRENT="$DB.before-restore.$(date +%Y%m%d-%H%M%S)"
+    sqlite3 "$DB" ".backup '$CURRENT'"
+    chmod 600 "$CURRENT"
+    echo "  текущая БД: $CURRENT"
+fi
+
+# 3. Подмена под остановленной панелью.
+x-ui stop >/dev/null 2>&1 || true
+cp "$TMP" "$DB"
+chown --reference="$CURRENT" "$DB" 2>/dev/null || true
+rm -f "$DB-wal" "$DB-shm"
+integrity=$(sqlite3 "$DB" "pragma integrity_check;" 2>/dev/null | head -1 || true)
+if [[ $integrity != ok ]]; then
+    [[ -n $CURRENT ]] && cp "$CURRENT" "$DB"
+    x-ui start >/dev/null 2>&1 || true
+    err "после подмены integrity_check: $integrity — вернул прежнюю БД"
+    exit 1
+fi
+x-ui start >/dev/null 2>&1 || true
+
+# 4. Проверка по факту: панель поднялась и отвечает.
+sleep 3
+port=$(sqlite3 "$DB" "select value from settings where key='webPort';" 2>/dev/null)
+base=$(sqlite3 "$DB" "select value from settings where key='webBasePath';" 2>/dev/null)
+code=$(curl -sk -o /dev/null -w '%{http_code}' --max-time 8 "https://127.0.0.1:${port}${base:-}/" 2>/dev/null || true)
+if [[ $code == 000 || -z $code ]]; then
+    err "панель не отвечает после восстановления (порт ${port:-?}) — смотрите journalctl -u x-ui"
     exit 1
 fi
 
-# Get backup file
-if [ -n "$1" ]; then
-    BACKUP_FILE="$1"
-else
-    echo -e "${YELLOW}Available backups:${NC}"
-    echo ""
-    
-    if [ ! -d "$BACKUP_DIR" ] || [ -z "$(ls -A $BACKUP_DIR 2>/dev/null)" ]; then
-        echo -e "${RED}No backups found in $BACKUP_DIR${NC}"
-        exit 1
-    fi
-    
-    ls -lh ${BACKUP_DIR}/x-ui.db.backup.*
-    echo ""
-    read -p "Enter backup file to restore: " BACKUP_FILE
-    
-    # Auto-add path if not provided
-    if [[ ! "$BACKUP_FILE" =~ ^/ ]]; then
-        BACKUP_FILE="${BACKUP_DIR}/${BACKUP_FILE}"
-    fi
-fi
-
-# Check if backup file exists
-if [ ! -f "$BACKUP_FILE" ]; then
-    echo -e "${RED}ERROR: Backup file not found: $BACKUP_FILE${NC}"
-    exit 1
-fi
-
-echo ""
-echo -e "${YELLOW}Backup file: $BACKUP_FILE${NC}"
-echo -e "${YELLOW}Target: $DB_PATH${NC}"
-echo ""
-
-# Confirm restore
-echo -e "${RED}⚠️  WARNING: This will overwrite the current database!${NC}"
-echo ""
-read -p "Are you sure you want to continue? (type 'YES' to confirm): " confirm
-
-if [ "$confirm" != "YES" ]; then
-    echo -e "${RED}Cancelled.${NC}"
-    exit 0
-fi
-
-echo ""
-echo -e "${BLUE}Starting restore...${NC}"
-echo ""
-
-# Step 1: Create backup of current database
-echo -e "${YELLOW}[1/5] Backing up current database...${NC}"
-if [ -f "$DB_PATH" ]; then
-    CURRENT_BACKUP="${DB_PATH}.backup.$(date +%Y%m%d_%H%M%S)"
-    cp "$DB_PATH" "$CURRENT_BACKUP"
-    echo -e "${GREEN}✓ Current database backed up to: $CURRENT_BACKUP${NC}"
-else
-    echo -e "${YELLOW}! No current database found, skipping backup${NC}"
-fi
-
-# Step 2: Stop 3x-ui
-echo ""
-echo -e "${YELLOW}[2/5] Stopping 3x-ui panel...${NC}"
-sudo x-ui stop
-echo -e "${GREEN}✓ 3x-ui stopped${NC}"
-
-# Step 3: Restore database
-echo ""
-echo -e "${YELLOW}[3/5] Restoring database...${NC}"
-
-if [[ "$BACKUP_FILE" =~ \.gz$ ]]; then
-    zcat "$BACKUP_FILE" > "$DB_PATH"
-    echo -e "${GREEN}✓ Database restored (from compressed backup)${NC}"
-else
-    cp "$BACKUP_FILE" "$DB_PATH"
-    echo -e "${GREEN}✓ Database restored${NC}"
-fi
-
-# Step 4: Verify integrity
-echo ""
-echo -e "${YELLOW}[4/5] Verifying database integrity...${NC}"
-
-if sqlite3 "$DB_PATH" "PRAGMA integrity_check;" | grep -q "ok"; then
-    echo -e "${GREEN}✓ Database integrity check passed${NC}"
-else
-    echo -e "${RED}✗ Database integrity check failed!${NC}"
-    echo "Restoring previous database..."
-    cp "$CURRENT_BACKUP" "$DB_PATH"
-    echo -e "${YELLOW}Previous database restored${NC}"
-    exit 1
-fi
-
-# Step 5: Start 3x-ui
-echo ""
-echo -e "${YELLOW}[5/5] Starting 3x-ui panel...${NC}"
-sudo x-ui start
-echo -e "${GREEN}✓ 3x-ui started${NC}"
-
-# Verify
-echo ""
-echo -e "${BLUE}═══════════════════════════════════════════════════════${NC}"
-echo -e "${GREEN}✓ Database restore completed successfully!${NC}"
-echo -e "${BLUE}═══════════════════════════════════════════════════════${NC}"
-echo ""
-
-# Check panel status
-echo -e "${YELLOW}Panel status:${NC}"
-sudo x-ui status
-
-echo ""
-echo -e "${GREEN}Database restored from: $BACKUP_FILE${NC}"
-echo -e "${YELLOW}Previous database saved to: $CURRENT_BACKUP${NC}"
-echo ""
+echo "PASS: БД восстановлена, панель отвечает (HTTP $code)"
+[[ -n $CURRENT ]] && echo "Откат при необходимости: cp '$CURRENT' '$DB' && x-ui restart"

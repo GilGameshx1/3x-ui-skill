@@ -1,0 +1,14 @@
+[Unit]
+Description=3x-ui: бэкап БД (навык 3x-ui-vpn)
+Documentation=https://github.com/GilGameshx1/3x-ui-skill
+After=x-ui.service
+Wants=x-ui.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/3x-ui-backup.env
+ExecStart=/usr/local/bin/3x-ui-backup --offsite --quiet
+Nice=10
+IOSchedulingClass=idle
+# Бэкап не должен падать из-за того, что панель перезапускается.
+Restart=no

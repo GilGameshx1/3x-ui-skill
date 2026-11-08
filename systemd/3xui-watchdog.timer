@@ -1,0 +1,12 @@
+[Unit]
+Description=3x-ui: проверка VPN каждые 5 минут
+Documentation=https://github.com/GilGameshx1/3x-ui-skill
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=5min
+AccuracySec=30s
+Unit=3xui-watchdog.service
+
+[Install]
+WantedBy=timers.target

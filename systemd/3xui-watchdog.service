@@ -1,0 +1,14 @@
+[Unit]
+Description=3x-ui: сторож VPN (панель, порт, сквозная проверка)
+Documentation=https://github.com/GilGameshx1/3x-ui-skill
+After=network-online.target x-ui.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/3x-ui-watchdog.env
+Environment=STATE_FILE=/var/lib/3x-ui-watchdog/state
+ExecStart=/usr/local/bin/3x-ui-watchdog
+StateDirectory=3x-ui-watchdog
+# Проверка ходит наружу через свой же туннель: даём ей время, но не бесконечно.
+TimeoutStartSec=120

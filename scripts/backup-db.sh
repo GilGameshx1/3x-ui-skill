@@ -1,111 +1,129 @@
-#!/bin/bash
-# 3x-ui SQLite3 Database Backup Script
-# Version: 2.0.0
+#!/usr/bin/env bash
+# Бэкап БД 3x-ui: целостная копия, шифрование age, выгрузка наружу через rclone.
 #
-# This script creates backups of the 3x-ui SQLite3 database
-# and optionally uploads them to a safe location.
+#   scripts/backup-db.sh                        локально в /root/x-ui-backups
+#   scripts/backup-db.sh --offsite              + rclone copy в удалённое хранилище
+#   scripts/backup-db.sh --keep 14 --offsite
+#   scripts/backup-db.sh --dry-run              показать план, ничего не писать
+#
+# Копия делается через `sqlite3 .backup`, а не cp: в WAL-режиме cp даёт битую БД.
+# Бэкап на том же диске не спасает при потере VPS — для этого --offsite
+# (настройка: references/backup-offsite.md).
+set -euo pipefail
 
-set -e
+DB=${XUI_DB:-/etc/x-ui/x-ui.db}
+DIR=${BACKUP_DIR:-/root/x-ui-backups}
+KEEP=10
+OFFSITE=0
+DRY=0
+QUIET=0
+RCLONE_REMOTE=${RCLONE_REMOTE:-}
+AGE_RECIPIENT=${AGE_RECIPIENT:-}
+ENV_FILE=${BACKUP_ENV_FILE:-/etc/3x-ui-backup.env}
 
-# Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m'
+say() { [[ $QUIET -eq 1 ]] || printf '%s\n' "$*"; }
+err() { printf 'ОШИБКА: %s\n' "$*" >&2; }
 
-# Configuration
-DB_PATH="/etc/x-ui/x-ui.db"
-BACKUP_DIR="/root/x-ui-backups"
-MAX_BACKUPS=10
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --db)            DB=${2:?нужен путь}; shift ;;
+        --dir)           DIR=${2:?нужен путь}; shift ;;
+        --keep)          KEEP=${2:?нужно число}; shift ;;
+        --offsite)       OFFSITE=1 ;;
+        --dry-run)       DRY=1 ;;
+        --quiet)         QUIET=1 ;;
+        --rclone-remote) RCLONE_REMOTE=${2-}; shift ;;
+        --age-recipient) AGE_RECIPIENT=${2:?нужен публичный ключ age}; shift ;;
+        --env-file)      ENV_FILE=${2:?нужен путь}; shift ;;
+        -h|--help)       sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        *) err "неизвестный аргумент: $1"; exit 64 ;;
+    esac
+    shift
+done
 
-echo -e "${BLUE}╔════════════════════════════════════════════════════════╗${NC}"
-echo -e "${BLUE}║     3x-ui SQLite3 Database Backup Script               ║${NC}"
-echo -e "${BLUE}╚════════════════════════════════════════════════════════╝${NC}"
-echo ""
+# Настройки выгрузки — отдельным файлом с правами 600, не в репозитории.
+if [[ -r $ENV_FILE ]]; then
+    # shellcheck disable=SC1090
+    . "$ENV_FILE"
+fi
 
-# Check if running as root
-if [ "$EUID" -ne 0 ]; then
-    echo -e "${RED}ERROR: This script must be run as root${NC}"
-    echo "Usage: sudo $0"
+# Проверки «до работы»: иначе локальная копия создастся, а выгрузка молча не будет.
+if [[ $OFFSITE -eq 1 && -z $RCLONE_REMOTE ]]; then
+    err "--offsite требует RCLONE_REMOTE (env-файл $ENV_FILE или --rclone-remote)"
     exit 1
 fi
 
-# Check if database exists
-if [ ! -f "$DB_PATH" ]; then
-    echo -e "${RED}ERROR: Database not found at $DB_PATH${NC}"
-    exit 1
+command -v sqlite3 >/dev/null || { err "нет sqlite3"; exit 1; }
+[[ -f $DB ]] || { err "нет БД: $DB"; exit 1; }
+[[ $KEEP =~ ^[0-9]+$ ]] || { err "--keep должен быть числом"; exit 1; }
+
+TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+BASE="$DIR/x-ui-$TIMESTAMP.db"
+
+say "Бэкап $DB → $DIR"
+if [[ $DRY -eq 1 ]]; then
+    say "[dry-run] sqlite3 .backup → $BASE(.gz|.age), храню последние $KEEP"
+    [[ $OFFSITE -eq 1 ]] && say "[dry-run] rclone copy → ${RCLONE_REMOTE:-<не задан>}"
+    exit 0
 fi
 
-# Create backup directory
-if [ ! -d "$BACKUP_DIR" ]; then
-    mkdir -p "$BACKUP_DIR"
-    echo -e "${GREEN}✓ Created backup directory: $BACKUP_DIR${NC}"
-fi
+mkdir -p "$DIR"
+chmod 700 "$DIR"
+TMP=$(mktemp "$DIR/.backup.XXXXXX.db")
+cleanup() { rm -f "$TMP" "$TMP.gz" "$TMP.age"; }
+trap cleanup EXIT
 
-# Create backup
-TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-BACKUP_FILE="${BACKUP_DIR}/x-ui.db.backup.${TIMESTAMP}"
+# 1. Согласованная копия (WAL-safe), затем проверка целостности уже копии.
+sqlite3 "$DB" ".backup '$TMP'"
+integrity=$(sqlite3 "$TMP" "pragma integrity_check;" | head -1)
+[[ $integrity == ok ]] || { err "копия не прошла integrity_check: $integrity"; exit 1; }
+say "  integrity ok"
 
-echo -e "${YELLOW}[1/4] Creating database backup...${NC}"
-
-# Verify database integrity before backup
-echo -e "${YELLOW}[2/4] Verifying database integrity...${NC}"
-if sqlite3 "$DB_PATH" "PRAGMA integrity_check;" | grep -q "ok"; then
-    echo -e "${GREEN}✓ Database integrity check passed${NC}"
+# 2. Шифрование (если задан получатель) и сжатие.
+if [[ -n $AGE_RECIPIENT ]]; then
+    command -v age >/dev/null || { err "задан AGE_RECIPIENT, но age не установлен"; exit 1; }
+    age -r "$AGE_RECIPIENT" -o "$TMP.age" "$TMP"
+    mv "$TMP.age" "$BASE.age"
+    chmod 600 "$BASE.age"
+    BACKUP_FILE="$BASE.age"
+    say "  зашифровано age"
 else
-    echo -e "${RED}✗ Database integrity check failed!${NC}"
-    echo "The database may be corrupted. Backup aborted."
-    exit 1
+    gzip -9 "$TMP"
+    mv "$TMP.gz" "$BASE.gz"
+    chmod 600 "$BASE.gz"
+    BACKUP_FILE="$BASE.gz"
+    say "  сжато gzip; шифрование выключено (см. references/backup-offsite.md)"
 fi
 
-# Copy database
-echo -e "${YELLOW}[3/4] Copying database...${NC}"
-cp "$DB_PATH" "$BACKUP_FILE"
-echo -e "${GREEN}✓ Backup created: $BACKUP_FILE${NC}"
+say "  файл: $BACKUP_FILE ($(du -h "$BACKUP_FILE" | cut -f1))"
 
-# Compress backup
-echo -e "${YELLOW}[4/4] Compressing backup...${NC}"
-if command -v gzip &> /dev/null; then
-    gzip "$BACKUP_FILE"
-    BACKUP_FILE="${BACKUP_FILE}.gz"
-    echo -e "${GREEN}✓ Backup compressed: $BACKUP_FILE${NC}"
+# 3. Выгрузка наружу: без неё бэкап умирает вместе с VPS.
+if [[ $OFFSITE -eq 1 ]]; then
+    command -v rclone >/dev/null || { err "нет rclone"; exit 1; }
+    rclone copy --no-traverse "$BACKUP_FILE" "$RCLONE_REMOTE" \
+        || { err "rclone copy не прошёл"; exit 1; }
+    name=$(basename "$BACKUP_FILE")
+    # Проверка по факту: файл реально виден в удалённом хранилище.
+    if rclone lsf "$RCLONE_REMOTE" --files-only | grep -qx "$name"; then
+        say "  выгружено: $RCLONE_REMOTE/$name"
+    else
+        err "после rclone copy файла $name нет в $RCLONE_REMOTE"
+        exit 1
+    fi
+    # Ротация на удалённой стороне: имена сортируются по времени.
+    mapfile -t remote_old < <(rclone lsf "$RCLONE_REMOTE" --files-only \
+        | grep -E '^x-ui-[0-9]{8}-[0-9]{6}\.db\.(gz|age)$' | sort | head -n "-$KEEP")
+    for f in "${remote_old[@]:-}"; do
+        [[ -n $f ]] && rclone deletefile "$RCLONE_REMOTE/$f" || true
+    done
 fi
 
-# Show backup info
-echo ""
-echo -e "${BLUE}═══════════════════════════════════════════════════════${NC}"
-echo -e "${GREEN}✓ Backup completed successfully!${NC}"
-echo -e "${BLUE}═══════════════════════════════════════════════════════${NC}"
-echo ""
-echo "Backup file: $BACKUP_FILE"
-echo "Backup size: $(du -h "$BACKUP_FILE" | cut -f1)"
-echo "Location: $BACKUP_DIR"
-echo ""
-
-# Cleanup old backups
-echo -e "${YELLOW}Cleaning up old backups (keeping last $MAX_BACKUPS)...${NC}"
-BACKUP_COUNT=$(ls -1 ${BACKUP_DIR}/x-ui.db.backup.* 2>/dev/null | wc -l)
-
-if [ "$BACKUP_COUNT" -gt "$MAX_BACKUPS" ]; then
-    BACKUPS_TO_DELETE=$((BACKUP_COUNT - MAX_BACKUPS))
-    ls -1t ${BACKUP_DIR}/x-ui.db.backup.* | tail -n "$BACKUPS_TO_DELETE" | xargs rm -f
-    echo -e "${GREEN}✓ Removed $BACKUPS_TO_DELETE old backup(s)${NC}"
-else
-    echo -e "${YELLOW}No old backups to remove${NC}"
+# 4. Ротация локальных копий.
+mapfile -t old < <(find "$DIR" -maxdepth 1 -type f -name 'x-ui-*.db.*' \
+    -printf '%T@ %p\n' | sort -rn | awk -v k="$KEEP" 'NR>k {print $2}')
+if ((${#old[@]})); then
+    rm -f -- "${old[@]}"
+    say "  удалено старых копий: ${#old[@]}"
 fi
 
-echo ""
-
-# List current backups
-echo -e "${YELLOW}Current backups:${NC}"
-ls -lh ${BACKUP_DIR}/x-ui.db.backup.* 2>/dev/null || echo "No backups found"
-
-echo ""
-echo -e "${YELLOW}To restore a backup:${NC}"
-echo "  1. Stop 3x-ui:    sudo x-ui stop"
-echo "  2. Restore DB:    sudo zcat $BACKUP_FILE > $DB_PATH"
-echo "  3. Start 3x-ui:   sudo x-ui start"
-echo ""
-echo "Or use the restore script: sudo ./restore-db.sh <backup-file>"
-echo ""
+say "Готово: $(basename "$BACKUP_FILE")"

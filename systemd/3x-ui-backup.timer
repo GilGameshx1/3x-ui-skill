@@ -1,0 +1,12 @@
+[Unit]
+Description=3x-ui: ежедневный бэкап БД
+Documentation=https://github.com/GilGameshx1/3x-ui-skill
+
+[Timer]
+OnCalendar=*-*-* 04:17:00 UTC
+Persistent=true
+RandomizedDelaySec=15m
+AccuracySec=1m
+
+[Install]
+WantedBy=timers.target

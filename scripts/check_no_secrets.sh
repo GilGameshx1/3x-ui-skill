@@ -36,7 +36,7 @@ def is_safe_ip(s):
     return False
 
 IPV4 = re.compile(r"(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?![\d.])")
-LINK = re.compile(r"\b(?:vless|vmess|trojan|ss|hysteria2?)://(?!<|\{|\$)[^\s\"'`)]{8,}")
+LINK = re.compile(r"\b(?:vless|vmess|trojan|ss|hysteria2?)://(?!<|\{|\$|%)[^\s\"'`)]{8,}")
 KEY  = re.compile(r"-----BEGIN (?:OPENSSH|RSA|EC|DSA|PRIVATE) PRIVATE KEY-----")
 CRED = re.compile(r"(?i)\b(?:password|passwd|passphrase|secret|api[_-]?key|"
                   r"access[_-]?token|auth[_-]?token|token)\b\s*[=:]\s*"
@@ -63,6 +63,11 @@ def files():
             listed += [os.path.relpath(os.path.join(root, n), ".") for n in names]
         return listed
 
+# Строка с этим маркером — намеренный пример в тестах, а не утечка.
+ALLOW = "secrets-ok"
+# Значение-ссылка на код, а не секрет: args.password, self.token, load(x), $VAR.
+CODE_REF = re.compile(r"^(?:[A-Za-z_][\w.]*\(|\.|\$|os\.|self\.|args\.|a\.|opts\.)")
+
 findings = []
 for path in files():
     if path == SELF or path.startswith(".github/"):
@@ -74,6 +79,8 @@ for path in files():
     except (UnicodeDecodeError, OSError):
         continue
     for no, line in enumerate(text.splitlines(), 1):
+        if ALLOW in line:
+            continue
         for m in IPV4.finditer(line):
             if not is_safe_ip(m.group()):
                 findings.append((path, no, "публичный IP: " + m.group()))
@@ -87,6 +94,8 @@ for path in files():
                 continue
             if not re.search(r"[A-Za-z0-9]", val):
                 continue   # кириллица / знаки — это текст, а не секрет
+            if CODE_REF.match(val):
+                continue   # ссылка на переменную/функцию, а не значение
             findings.append((path, no, "похоже на пароль/токен: " + m.group()[:40]))
 
 if findings:

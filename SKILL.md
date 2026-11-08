@@ -1,7 +1,7 @@
 ---
 name: 3x-ui-vpn
 description: Deploy, audit, migrate or harden a 3x-ui/Xray VPN VPS.
-version: 3.0.0
+version: 3.1.0
 author: GilGameshx1 (port: Hermes Agent / DeepSeek)
 license: MIT
 metadata:
@@ -29,6 +29,10 @@ DeepSeek, Qwen, Claude, GPT — у любого агента с доступом
 - «Сменился IP, надо перенастроить» / «переезжаем на другой сервер».
 - «Усиль сервер»: SSH, UFW, fail2ban, BBR, сертификаты.
 - «Выдай ссылку на подключение» / «добавь пользователя в панель».
+- «Сделай подписку, чтобы ссылки обновлялись сами».
+- «Что на сервере реально сделано» / «сервер жив, но VPN не работает».
+- «Настрой бэкапы и чтобы о падении узнавали сразу».
+- «Провайдер душит TCP/443 — дай второй транспорт».
 
 ## Железные правила
 
@@ -241,6 +245,57 @@ sshd -t && systemctl reload ssh
 контейнеры, которые узнают внешний IP при старте → сертификат на новый адрес →
 сквозная проверка → снять автооткат → почистить старый IP из конфигов.
 
+## Режим D. Клиенты, лимиты, подписка
+
+```bash
+# Клиент с лимитами; печатает vless:// и URL подписки ОДИН раз в чат
+scripts/add_client.sh --inbound 1 --email ivan --expiry-days 30 --quota-gb 100 --limit-ip 2
+scripts/add_client.sh --inbound VLESS-443 --email ivan --update --quota-gb 200
+scripts/add_client.sh --inbound 1 --email ivan --dry-run --json    # план без изменений
+
+# Подписка: включить, выдать subId старым клиентам, проверить запросом
+scripts/sub_setup.sh
+scripts/sub_setup.sh --assign-subids
+```
+
+Клиента создаёт **API панели**, а не SQL: в новых версиях клиенты живут в
+нормализованных таблицах `clients` / `client_inbounds`, плюс строка в
+`client_traffics`. Прямая вставка в `settings` JSON их не создаёт и статистику не
+заводит. Скрипт после создания перечитывает карточку клиента из панели — «API
+ответил 200» не считается доказательством.
+
+Два подводных камня в цифрах: `totalGB` в 3x-ui хранится **в байтах** (имя врёт),
+`expiryTime` — epoch **в миллисекундах**, `0` = без ограничения.
+
+Подписка: `subEnable/subPort/subPath/subURI`, URL = `<subURI или схема://хост:порт+путь><subId>`.
+Детали, TLS и клиенты — `references/subscription.md`.
+
+## Режим E. Эксплуатация: состояние, сторож, бэкапы
+
+```bash
+scripts/state_check.sh                  # PASS/WARN/FAIL по факту, ничего не меняет
+scripts/state_check.sh --json --strict  # для мониторинга: код 1 при FAIL
+scripts/backup-db.sh --offsite          # копия + age + rclone наружу
+scripts/watchdog.sh --verbose           # один прогон сторожа
+```
+
+`state_check.sh` — это ответ на «что реально сделано»: панель, порты, пара ключей
+Reality, включённость подписки, SSH, UFW, sysctl, сертификаты, свежесть бэкапа,
+таймеры, IPv6, диск, `xray -test`. Каждая строка — проверка, а не пересказ гайда.
+
+Сторож и бэкап ставятся таймерами (`systemd/`): 5 минут — проверка туннеля с
+алертом в Telegram, ежедневно — зашифрованный бэкап вне сервера.
+`references/watchdog.md`, `references/backup-offsite.md`.
+
+## IPv6 и второй транспорт
+
+- IPv6 включён у хостера, а туннель только IPv4 → трафик уходит мимо. Проверять
+  `ip -6 addr`, `curl -6 https://ipv6.icanhazip.com`, `verify_vless.py --family 6`;
+  сценарии «выключить» и «сделать v6-inbound» — `references/ipv6.md`.
+- Провайдер душит TCP/443 → Hysteria2 (UDP) рядом, не вместо Reality:
+  `scripts/install_singbox_hysteria2.sh --domain <DOMAIN> --cert-mode acme`,
+  детали — `references/hysteria2.md`.
+
 ## Грабли
 
 - **Docker MASQUERADE берёт первый IPv4 на интерфейсе**, а не `src` из маршрута:
@@ -277,6 +332,21 @@ sshd -t && systemctl reload ssh
   в чат.
 - **Внешняя проверка порта без своего браузера — API check-host.net.** Запрос →
   `request_id`, результат через ~12 с; `null` вместо узлов — рано, подожди ещё.
+- **`xray x25519 -i <priv>` печатает три строки:** `PrivateKey`, `Password`,
+  `Hash32`. Публичный ключ — `Password`, а не последняя строка вывода: `awk '{print
+  $NF}'` вернёт `Hash32` и «проверка ключей» провалится на исправной паре.
+- **Сохранённый `publicKey` может не соответствовать `privateKey`** (пара
+  генерировалась двумя вызовами). Тогда панель показывает одну ссылку, а сервер
+  ждёт другую. Истина — только `x25519 -i`: ссылки собирать из выведенного ключа,
+  а расхождение считать поломкой, которую надо чинить (перевыпустить пару и
+  ссылки), а не косметикой.
+- **Панель может слушать `*:<port>`, а не `127.0.0.1`.** `ufw` это прикрывает, но
+  проверять надо `ss -ltn`, а не статус ufw: при смене файрвола панель окажется
+  снаружи. `state_check.sh` ловит это как `panel.exposure`.
+- **`cp x-ui.db` в WAL-режиме даёт битую копию.** Только `sqlite3 .backup`, и
+  проверять `integrity_check` уже на копии, а не на источнике.
+- **`subURI` перекрывает хост из запроса.** Если однажды записан — подписка
+  навсегда прибита к старому адресу, смена IP её не чинит.
 
 ## Отчёт
 
@@ -286,13 +356,48 @@ sshd -t && systemctl reload ssh
 
 ## Файлы
 
-- `scripts/server_audit.sh` — read-only сбор состояния сервера.
-- `scripts/verify_vless.py` — сквозная проверка VLESS Reality через локальный socks.
+- `scripts/server_audit.sh` — read-only сбор состояния сервера (включая IPv6).
+- `scripts/state_check.sh` — PASS/WARN/FAIL по факту, `--json`, `--strict`.
+- `scripts/verify_vless.py` — сквозная проверка VLESS Reality через локальный socks;
+  `--family 4|6|auto`, `--expect-family`.
+- `scripts/add_client.sh` — клиент с лимитами через API панели + ссылка/подписка.
+- `scripts/sub_setup.sh` — включить подписку, выдать `subId`, проверить запросом.
+- `scripts/watchdog.sh` — сторож: панель, порт, туннель, алерт в Telegram.
+- `scripts/backup-db.sh`, `scripts/restore-db.sh` — БД x-ui: `.backup`, `age`,
+  `rclone`, `.db.gz`/`.db.age` при восстановлении.
+- `scripts/install_singbox_hysteria2.sh` — второй транспорт Hysteria2.
 - `scripts/check_no_secrets.sh` — страж репозитория: IP, пароли, ключи, ссылки.
-- `scripts/backup-db.sh`, `scripts/restore-db.sh` — БД x-ui.
 - `scripts/rollback.sh` — откат установки (панель, пользователь, SSH), с подтверждением.
+- `scripts/lib/xui.py` — общая библиотека: БД, API панели, ссылки, подписка.
+- `systemd/` — таймеры бэкапа и сторожа.
+- `tests/` — bats-тесты на фикстурах и фальшивой панели (обе схемы API).
 - `references/reality-sni.md` — как выбрать SNI и не сломать Reality.
 - `references/reality-link-format.md` — из чего собирается `vless://`.
 - `references/vless-tls.md` — вариант с доменом и сертификатом.
+- `references/subscription.md` — подписка: настройки, TLS, клиенты.
+- `references/watchdog.md` — сторож и алерты.
+- `references/backup-offsite.md` — бэкап наружу (rclone + age) и восстановление.
 - `references/ip-migration.md` — переезд на новый IP.
+- `references/ipv6.md` — IPv6: утечки и v6-inbound.
+- `references/hysteria2.md` — второй транспорт на UDP.
 - `references/fallback-nginx.md` — страница-заглушка для TLS-варианта.
+
+## Обслуживание навыка
+
+Навык живёт в репозитории и ставится через `install.sh`, поэтому при правках:
+
+- Тесты — `bats tests/` (нужны `bats`, `sqlite3`, `python3`); они не требуют VPN и
+  поднимают фальшивую панель обеих схем API. Правка без зелёных тестов не считается
+  сделанной.
+- CI (`.github/workflows/ci.yml`): `check_no_secrets.sh --all`, `shellcheck -x -S
+  warning`, `py_compile`, `bats`. Локально те же команды — до коммита.
+- `REPO_URL` переопределяется окружением, и к нему **нельзя дописывать `.git`**:
+  иначе установщик не проверить на локальном клоне. Тест: `REPO_URL=file:///path/to/clone
+  ./install.sh --dir /tmp/skilltest`.
+- Примеры адресов — только TEST-NET `203.0.113.0/24`; «похожий на настоящий» пример
+  сканер не отличит от утечки.
+- `check_no_secrets.sh` не должен срабатывать на прозе: ключами считать
+  `password|passwd|passphrase|secret|api_key|token` (не одинокий `pass`), а значение
+  обязано содержать ASCII-букву или цифру.
+- Перед коммитом: `bash scripts/check_no_secrets.sh` и `git show --stat`;
+  `__pycache__/` и `*.pyc` держать в `.gitignore`.

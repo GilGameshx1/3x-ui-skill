@@ -10,6 +10,21 @@
 
 ---
 
+## Что нового в 3.1
+
+Эксплуатация вместо разовой настройки: клиенты, подписка, сторож, бэкапы, тесты.
+
+| Задача | Что появилось |
+|---|---|
+| Выдать клиента с лимитами | `scripts/add_client.sh`: срок, трафик, лимит IP, `subId`, ссылка и URL подписки |
+| Ссылки обновлялись сами | `scripts/sub_setup.sh`: подписка включена и проверена запросом |
+| «Что реально сделано» | `scripts/state_check.sh`: PASS/WARN/FAIL по факту, `--json`, `--strict` |
+| Узнать о падении первым | `scripts/watchdog.sh` + таймер: панель, порт, сквозной туннель, Telegram |
+| Бэкап, который переживёт потерю VPS | `backup-db.sh --offsite`: `sqlite3 .backup`, `age`, `rclone`, ротация |
+| Не гадать, что сломано | 25 bats-тестов на фикстурах и фальшивой панели обеих схем API |
+| Утечка мимо туннеля | `references/ipv6.md`, `verify_vless.py --family 6`, IPv6 в аудите |
+| Провайдер душит TCP/443 | `references/hysteria2.md` + `install_singbox_hysteria2.sh` |
+
 ## Что нового в 3.0
 
 Порт с Qwen Code на модель-агностичный формат и исправление ошибок, которые ломали
@@ -63,20 +78,33 @@ cd 3x-ui-skill
 ## Что внутри
 
 ```
-SKILL.md                            три режима, правила, грабли
+SKILL.md                            пять режимов, правила, грабли
 references/reality-sni.md           выбор SNI: требования, проверка, антипаттерны
 references/reality-link-format.md   из чего собирается vless://
 references/vless-tls.md             вариант с доменом и сертификатом
+references/subscription.md          подписка: настройки, TLS, клиенты, грабли
+references/watchdog.md              сторож: что проверяет, установка, алерты
+references/backup-offsite.md        бэкап наружу (rclone + age), восстановление
 references/ip-migration.md          переезд на новый IP: маршрут, NAT, docker, LE
+references/ipv6.md                  IPv6: утечки и v6-inbound
+references/hysteria2.md             второй транспорт на UDP
 references/fallback-nginx.md        страница-заглушка для TLS-варианта
-scripts/server_audit.sh             read-only аудит сервера
+scripts/server_audit.sh             read-only аудит сервера (включая IPv6)
+scripts/state_check.sh              состояние по факту: PASS/WARN/FAIL
 scripts/verify_vless.py             сквозная проверка через локальный socks
+scripts/add_client.sh               клиент с лимитами через API панели
+scripts/sub_setup.sh                подписка и subId
+scripts/watchdog.sh                 сторож + Telegram
+scripts/backup-db.sh                бэкап БД x-ui (age, rclone)
+scripts/restore-db.sh               восстановление .db/.gz/.age
+scripts/install_singbox_hysteria2.sh  Hysteria2 рядом с Reality
 scripts/check_no_secrets.sh         страж репозитория
-scripts/backup-db.sh                бэкап БД x-ui
-scripts/restore-db.sh               восстановление БД x-ui
+scripts/lib/xui.py                  БД, API панели, ссылки, подписка
+systemd/                            таймеры бэкапа и сторожа
+tests/                              bats-тесты (фикстуры + фальшивая панель)
 ```
 
-## Три режима
+## Пять режимов
 
 1. **Развёртывание** — свежий VPS: пользователь + ключ, UFW с автооткатом, sysctl,
    3x-ui на `127.0.0.1`, Reality с проверенным SNI, сквозной тест, замок SSH последним.
@@ -84,6 +112,8 @@ scripts/restore-db.sh               восстановление БД x-ui
    поломки (docker NAT, BBR, ufw-юнит, flow, сертификаты).
 3. **Смена IP** — маршрут и `src`, SNAT для контейнеров, пересоздание MTProto,
    сертификат на новый адрес, проверка, чистка старого адреса.
+4. **Клиенты и подписка** — лимиты по трафику/сроку/IP, `subId`, автообновление ссылок.
+5. **Эксплуатация** — `state_check.sh`, сторож с алертом, шифрованный бэкап вне сервера.
 
 ## Клиенты
 
@@ -99,11 +129,12 @@ scripts/restore-db.sh               восстановление БД x-ui
 ## Проверка перед публикацией
 
 ```bash
-bash scripts/check_no_secrets.sh
+bash scripts/check_no_secrets.sh   # секреты: IP, ссылки, ключи, пароли
+shellcheck -x -S warning scripts/*.sh install.sh
+bats tests/                        # 25 тестов на фикстурах, без VPN
 ```
 
-Падает на публичном IPv4, готовых ссылках, приватных ключах и строках, похожих на
-пароль. То же гоняется в CI (`.github/workflows/secrets.yml`).
+Всё это же гоняется в CI (`.github/workflows/ci.yml`) на каждый push и PR.
 
 ## Лицензия
 

@@ -7,6 +7,50 @@
 
 ---
 
+## [3.1.0] — 2026-11-08
+
+Эксплуатация: клиенты с лимитами, подписка, сторож, бэкап вне сервера, IPv6 и
+второй транспорт. Плюс тесты и CI, чтобы правки не ломали скрипты молча.
+
+### ✨ Добавлено
+
+- `scripts/add_client.sh` — клиент через API панели: срок, трафик, лимит IP,
+  `subId`; печатает ссылку и URL подписки, `--dry-run`, `--json`, `--update`.
+  Создаёт через API, а не SQL: новые 3x-ui держат клиентов в таблицах
+  `clients`/`client_inbounds`, прямая вставка в `settings` их не создаёт.
+- `scripts/sub_setup.sh` — подписка: включает `subEnable/subPort/subPath`,
+  выдаёт `subId` старым клиентам, проверяет `GET` по ссылке (PASS/FAIL).
+- `scripts/state_check.sh` — состояние по факту: панель, порты, пара ключей
+  Reality, подписка, SSH, UFW, sysctl, сертификаты, бэкапы, таймеры, IPv6, диск,
+  `xray -test`. `--json`, `--strict`, ничего не меняет.
+- `scripts/watchdog.sh` + `systemd/3xui-watchdog.*` — проверка каждые 5 минут,
+  алерт в Telegram с антидребезгом, отбой при восстановлении.
+- `scripts/backup-db.sh --offsite` — `sqlite3 .backup`, проверка целостности
+  копии, `age`, `rclone` с проверкой выгрузки, ротация локально и удалённо;
+  `systemd/3x-ui-backup.*`.
+- `scripts/restore-db.sh` переписан: `.db`, `.db.gz`, `.db.age`, автооткат при
+  неудачной проверке, проверка панели после старта.
+- `references/subscription.md`, `references/watchdog.md`,
+  `references/backup-offsite.md`, `references/ipv6.md`, `references/hysteria2.md`.
+- `scripts/install_singbox_hysteria2.sh` — Hysteria2 (UDP) рядом с Reality.
+- IPv6: секция в `server_audit.sh`, `verify_vless.py --family 4|6|auto` и
+  `--expect-family`, проверка семейства exit IP.
+- `tests/` — bats на фикстурах + фальшивая панель обеих схем API (создание,
+  обновление, `subId`, ошибки логина, бэкап, восстановление, сканер секретов).
+- CI: `.github/workflows/ci.yml` — secrets, shellcheck, py_compile, bats.
+
+### 🐛 Исправлено
+
+- Публичный ключ Reality выводится из `privateKey` (`x25519 -i`), а не берётся из
+  БД: сохранённое значение может быть из другой пары. При расхождении — warning.
+- `x25519` в 26.x печатает `PrivateKey`/`Password`/`Hash32`; парсер берёт именно
+  `Password`, а не последнюю строку (раньше `Hash32` ломал сверку).
+- `state_check.sh` больше не считает HTTP 301 (редирект на basePath) ошибкой и
+  берёт SNI из `serverNames`, когда `serverName` пуст.
+- Бэкап делает `sqlite3 .backup` вместо `cp`: копия живой WAL-БД больше не битая.
+
+---
+
 ## [3.0.0] — 2026-11-08
 
 Порт с Qwen Code на модель-агностичный формат (Hermes Agent / DeepSeek) и
