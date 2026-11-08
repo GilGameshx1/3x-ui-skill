@@ -20,10 +20,10 @@
 
 ```bash
 # 1. Скрипты в стабильные пути
-install -m 755 scripts/watchdog.sh   /usr/local/bin/3x-ui-watchdog
-install -m 755 scripts/verify_vless.py /usr/local/bin/3x-ui-verify
-# watchdog.sh ищет verify_vless.py рядом с собой — положить оба в один каталог:
-install -m 755 scripts/watchdog.sh scripts/verify_vless.py /usr/local/bin/
+install -m 755 scripts/watchdog.sh     /usr/local/bin/3x-ui-watchdog
+install -m 755 scripts/verify_vless.py /usr/local/bin/verify_vless.py
+# Имена обязательны: ExecStart ждёт /usr/local/bin/3x-ui-watchdog, а watchdog.sh
+# ищет verify_vless.py рядом с собой (тот же /usr/local/bin).
 
 # 2. Настройки (права 600: внутри токен бота)
 cat >/etc/3x-ui-watchdog.env <<'EOF'
