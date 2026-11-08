@@ -1,6 +1,6 @@
 ---
 name: 3x-ui-vpn
-description: Deploy, audit, migrate or harden a 3x-ui/Xray VPN VPS.
+description: VPN на 3x-ui — развернуть, проверить, переехать, усилить.
 version: 3.1.0
 author: GilGameshx1 (port: Hermes Agent / DeepSeek)
 license: MIT
