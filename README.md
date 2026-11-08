@@ -21,7 +21,7 @@
 | «Что реально сделано» | `scripts/state_check.sh`: PASS/WARN/FAIL по факту, `--json`, `--strict` |
 | Узнать о падении первым | `scripts/watchdog.sh` + таймер: панель, порт, сквозной туннель, Telegram |
 | Бэкап, который переживёт потерю VPS | `backup-db.sh --offsite`: `sqlite3 .backup`, `age`, `rclone`, ротация |
-| Не гадать, что сломано | 25 bats-тестов на фикстурах и фальшивой панели обеих схем API |
+| Не гадать, что сломано | 27 bats-тестов на фикстурах и фальшивой панели обеих схем API |
 | Утечка мимо туннеля | `references/ipv6.md`, `verify_vless.py --family 6`, IPv6 в аудите |
 | Провайдер душит TCP/443 | `references/hysteria2.md` + `install_singbox_hysteria2.sh` |
 
@@ -131,7 +131,7 @@ tests/                              bats-тесты (фикстуры + фаль
 ```bash
 bash scripts/check_no_secrets.sh   # секреты: IP, ссылки, ключи, пароли
 shellcheck -x -S warning scripts/*.sh install.sh
-bats tests/                        # 25 тестов на фикстурах, без VPN
+bats tests/                        # 27 тестов на фикстурах, без VPN
 ```
 
 Всё это же гоняется в CI (`.github/workflows/ci.yml`) на каждый push и PR.

@@ -116,3 +116,51 @@ PY
     [ "$status" -ne 0 ]
     [[ $output == *"подписка выключена"* ]]
 }
+
+@test "link: publicKey с паддингом — та же пара, ссылка канонична и без warning" {
+    mkdir -p "$TEST_DIR/bin"
+    cat > "$TEST_DIR/bin/xray" <<'STUB'
+#!/bin/sh
+# заглушка x25519: ключ из 32 нулевых байт в base64url без паддинга
+echo "PrivateKey: PRIV"
+echo "Password: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+echo "Hash32: deadbeef"
+STUB
+    chmod +x "$TEST_DIR/bin/xray"
+    python3 - "$XUI_DB" <<'PY'
+import json, sqlite3, sys
+c = sqlite3.connect(sys.argv[1])
+st = json.loads(c.execute("select stream_settings from inbounds where id=1").fetchone()[0])
+st["realitySettings"]["settings"]["publicKey"] = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+c.execute("update inbounds set stream_settings=? where id=1", (json.dumps(st),))
+c.commit()
+PY
+    run env XRAY_BIN="$TEST_DIR/bin/xray" python3 "$XUI" link --db "$XUI_DB" \
+        --inbound 1 --email alice --host 203.0.113.10
+    [ "$status" -eq 0 ]
+    [[ $output == *"pbk=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&"* ]]
+    [[ $output != *"ВНИМАНИЕ"* ]]
+}
+
+@test "link: другая пара ключей — честный warning, а не тишина" {
+    mkdir -p "$TEST_DIR/bin"
+    cat > "$TEST_DIR/bin/xray" <<'STUB'
+#!/bin/sh
+echo "PrivateKey: PRIV"
+echo "Password: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+echo "Hash32: deadbeef"
+STUB
+    chmod +x "$TEST_DIR/bin/xray"
+    python3 - "$XUI_DB" <<'PY'
+import json, sqlite3, sys
+c = sqlite3.connect(sys.argv[1])
+st = json.loads(c.execute("select stream_settings from inbounds where id=1").fetchone()[0])
+st["realitySettings"]["settings"]["publicKey"] = "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+c.execute("update inbounds set stream_settings=? where id=1", (json.dumps(st),))
+c.commit()
+PY
+    run env XRAY_BIN="$TEST_DIR/bin/xray" python3 "$XUI" link --db "$XUI_DB" \
+        --inbound 1 --email alice --host 203.0.113.10
+    [ "$status" -eq 0 ]
+    [[ $output == *"ВНИМАНИЕ"* ]]
+}

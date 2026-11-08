@@ -167,10 +167,24 @@ def inbound_clients(conn, inbound):
 # ---------------------------------------------------------------- Xray
 
 def find_xray(explicit=None):
-    for p in ([explicit] if explicit else []) + XRAY_CANDIDATES:
+    env = os.environ.get("XRAY_BIN")
+    for p in ([explicit] if explicit else []) + ([env] if env else []) + XRAY_CANDIDATES:
         if p and os.path.isfile(p) and os.access(p, os.X_OK):
             return p
     return shutil.which("xray")
+
+
+def _key_bytes(value):
+    """Декодирует base64/base64url-ключ в байты; None, если это не ключ."""
+    import base64
+    if not value:
+        return None
+    v = value.strip().replace("-", "+").replace("_", "/")
+    v += "=" * ((4 - len(v) % 4) % 4)
+    try:
+        return base64.b64decode(v, validate=True)
+    except Exception:  # noqa: BLE001 — любое несоответствие значит «не ключ»
+        return None
 
 
 def reality_public_key(stream):
@@ -195,8 +209,14 @@ def reality_public_key(stream):
                     derived = line.split(":", 1)[1].strip()
             if derived:
                 if stored and derived != stored:
-                    print("ВНИМАНИЕ: publicKey в панели не соответствует privateKey — "
-                          "в ссылку идёт выведенный ключ", file=sys.stderr)
+                    # Та же пара в другой кодировке (base64 с паддингом вместо
+                    # base64url) — это не расхождение ключей, но такая ссылка не
+                    # подключается: молча отдаём канонический вариант.
+                    same = _key_bytes(stored) == _key_bytes(derived)
+                    if not same:
+                        print("ВНИМАНИЕ: publicKey в панели из другой пары, чем "
+                              "privateKey — в ссылку идёт выведенный ключ",
+                              file=sys.stderr)
                 return derived
     if stored:
         # Без xray (не 3x-ui-сервер) проверить нечем — берём как есть.

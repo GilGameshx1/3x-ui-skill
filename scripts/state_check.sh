@@ -158,11 +158,27 @@ print("%s|%s|%s|%s|%s" % (
                 elif have python3 && [[ -x /usr/local/x-ui/bin/xray-linux-amd64 ]]; then
                     derived=$(/usr/local/x-ui/bin/xray-linux-amd64 x25519 -i "$priv" 2>/dev/null \
                         | awk -F': *' 'tolower($1) ~ /^(password|publickey)$/ {print $2; exit}')
-                    if [[ $derived == "$pub" ]]; then
-                        ok "$key.reality" "ключи Reality сходятся, SNI ${sni:-?}"
-                    else
-                        bad "$key.reality" "publicKey не выводится из privateKey"
-                    fi
+                    verdict=$(python3 - "$derived" "$pub" <<'PY'
+import base64, sys
+
+def dec(s):
+    v = s.strip().replace("-", "+").replace("_", "/")
+    return base64.b64decode(v + "=" * ((4 - len(v) % 4) % 4)) if v else b""
+
+a, b = dec(sys.argv[1]), dec(sys.argv[2])
+if sys.argv[1] == sys.argv[2]:
+    print("ok")
+elif a and a == b:
+    print("encoding")
+else:
+    print("mismatch")
+PY
+)
+                    case $verdict in
+                        ok)       ok "$key.reality" "ключи Reality сходятся, SNI ${sni:-?}" ;;
+                        encoding) warn "$key.reality" "publicKey в БД в неканоничной кодировке (base64 с паддингом) — ссылки панели не подключатся" ;;
+                        *)        bad "$key.reality" "publicKey в БД из другой пары, чем privateKey" ;;
+                    esac
                 else
                     warn "$key.reality" "бинарь xray не найден, пару не проверить"
                 fi
@@ -208,17 +224,21 @@ SUB_PATH=$(setting subPath)
 if [[ ${SUB_ENABLE,,} == true ]]; then
     ok sub.enabled "subPort=${SUB_PORT:-?} path=${SUB_PATH:-/}"
     if [[ $QUICK -eq 0 && -n $SUB_PORT ]]; then
-        probe=$(sqlite3 "$DB" "select settings from inbounds;" 2>/dev/null \
-            | python3 -c '
-import json, sys
-for line in sys.stdin:
-    try:
-        for c in (json.loads(line).get("clients") or []):
-            if c.get("subId"):
-                print(c["subId"]); raise SystemExit
-    except Exception:
-        continue
-' 2>/dev/null)
+        # settings JSON в 3x-ui бывает pretty-printed (с переводами строк),
+        # поэтому читаем БД через sqlite3, а не построчно из вывода CLI.
+        probe=$(python3 - "$DB" <<'PY'
+import json, sqlite3, sys
+try:
+    c = sqlite3.connect("file:%s?mode=ro" % sys.argv[1], uri=True)
+    for (raw,) in c.execute("select settings from inbounds"):
+        for cl in (json.loads(raw or "{}").get("clients") or []):
+            if cl.get("subId"):
+                print(cl["subId"])
+                raise SystemExit
+except Exception:
+    pass
+PY
+)
         if [[ -n $probe ]]; then
             scheme=https
             [[ -n $(setting subCertFile) && -n $(setting subKeyFile) ]] || scheme=http
